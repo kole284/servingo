@@ -1,6 +1,7 @@
 import "server-only";
 
-export type Mail = { to: string; subject: string; text: string };
+/** `replyTo` lets Servingo answer form messages straight to the sender. */
+export type Mail = { to: string; subject: string; text: string; replyTo?: string };
 
 export type MailStatus = { status: "sent" | "logged" | "failed"; error?: string };
 
@@ -39,6 +40,7 @@ export async function sendMail(mail: Mail): Promise<MailStatus> {
         subject: mail.subject,
         text: mail.text,
         html: toHtml(mail.text),
+        ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
       }),
     });
     if (res.ok) return { status: "sent" };
