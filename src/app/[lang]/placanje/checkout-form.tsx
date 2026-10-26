@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { PaymentSummary } from "@/components/order-summary";
 import { formatDate, slotLabel, type Method } from "@/lib/booking";
@@ -9,75 +9,12 @@ import { useI18n } from "@/i18n/provider";
 import { cartDetails, markPlaced, setBooking, updateItems, useCart } from "@/lib/cart";
 import { useConfig } from "@/lib/config";
 import { formatPrice } from "@/lib/menu";
+import { Field, RadioCards } from "@/components/form-fields";
 import { ChevronDownIcon } from "@/components/icons";
 import type { Dictionary } from "@/i18n/dictionaries/sr";
 import type { Locale } from "@/i18n/config";
 import type { OrderError } from "@/server/orders";
 import { placeOrder } from "./actions";
-
-function Field({ label, ...props }: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className="flex flex-col gap-2">
-      <span className="text-[15px] font-medium">
-        {label}
-        {props.required && <span className="text-accent" aria-hidden="true"> *</span>}
-      </span>
-      <input
-        className="h-14 border border-line px-5 text-base placeholder:text-muted focus:border-ink focus:outline-none"
-        {...props}
-      />
-    </label>
-  );
-}
-
-/** Two or more bordered radio cards; the chosen one is outlined in orange. */
-function RadioCards<T extends string>({
-  name,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  name: string;
-  label: string;
-  value: T;
-  options: { value: T; label: string; note?: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label={label}>
-      {options.map((option) => {
-        const checked = value === option.value;
-        return (
-          <label
-            key={option.value}
-            className={`flex min-h-14 cursor-pointer items-center gap-3 border px-5 py-3 has-focus-visible:outline-2 has-focus-visible:outline-ink ${
-              checked ? "border-cta bg-accent-soft" : "border-line hover:border-ink"
-            }`}
-          >
-            <input
-              type="radio"
-              name={name}
-              value={option.value}
-              checked={checked}
-              onChange={() => onChange(option.value)}
-              className="sr-only"
-            />
-            <span
-              className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${checked ? "border-cta" : "border-muted"}`}
-            >
-              {checked && <span className="size-2.5 rounded-full bg-cta" />}
-            </span>
-            <span className="flex flex-col">
-              <span className="text-base font-medium">{option.label}</span>
-              {option.note && <span className="text-sm text-muted">{option.note}</span>}
-            </span>
-          </label>
-        );
-      })}
-    </div>
-  );
-}
 
 function errorText(error: OrderError, locale: Locale, t: Dictionary) {
   const messages = t.checkout.errors;

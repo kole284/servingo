@@ -110,6 +110,8 @@ model Settings {
   deliveryMinimumRsd    Int      @map("delivery_minimum_rsd")
   /// Gets a copy of every bill with drinks, since Servingo supplies them.
   servingoOrdersEmail   String   @default("porudzbine@servingo.rs") @map("servingo_orders_email")
+  /// Receives the Kontakt and "Postani deo nas" forms.
+  contactEmail          String   @default("podrska@servingo.rs") @map("contact_email")
   /// How long an order waits for payment before it counts as cancelled.
   pendingPaymentMinutes Int      @default(30) @map("pending_payment_minutes")
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -310,4 +312,61 @@ model Notification {
 
   @@index([orderId])
   @@map("notifications")
+}
+
+enum PartnerKind {
+  restoran
+  poslasticarnica
+  vinoteka
+  drugo
+
+  @@map("partner_kind")
+}
+
+enum ApplicationStatus {
+  new
+  contacted
+  accepted
+  rejected
+
+  @@map("application_status")
+}
+
+/// The Kontakt form.
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  /// Optional order code, e.g. "SRV-7K3Q9", when the question is about an order.
+  orderCode String?  @map("order_code")
+  message   String
+  locale    String
+  /// HMAC of the sender's IP, only for limiting repeated sends.
+  ipHash    String   @map("ip_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([ipHash, createdAt])
+  @@map("contact_messages")
+}
+
+/// The "Postani deo nas" form.
+model PartnerApplication {
+  id           String            @id @default(cuid())
+  businessName String            @map("business_name")
+  kind         PartnerKind
+  contactName  String            @map("contact_name")
+  email        String
+  phone        String
+  /// Town or part of town.
+  area         String
+  message      String?
+  status       ApplicationStatus @default(new)
+  locale       String
+  ipHash       String            @map("ip_hash")
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([ipHash, createdAt])
+  @@index([status])
+  @@map("partner_applications")
 }

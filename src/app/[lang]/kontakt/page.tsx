@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PageShell } from "@/components/page-shell";
 import { getDictionary } from "@/i18n/server";
+import { ContactForm } from "./contact-form";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getDictionary();
@@ -34,6 +35,13 @@ export default async function ContactPage() {
           </div>
         ))}
       </dl>
+
+      <section aria-labelledby="poruka-naslov" className="mt-14 flex max-w-2xl flex-col gap-6 border-t border-ink pt-6">
+        <h2 id="poruka-naslov" className="caps-title text-base">
+          {t.contact.form.title}
+        </h2>
+        <ContactForm />
+      </section>
     </PageShell>
   );
 }
