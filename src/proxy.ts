@@ -32,6 +32,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Skip Next internals, API routes and files with an extension (favicons, images, manifest).
-  matcher: ["/((?!_next|api|.*\\..*).*)"],
+  // Skip Next internals, API routes, the Serbian-only admin and files with an extension (favicons, images, manifest).
+  matcher: ["/((?!_next|api|admin|.*\\..*).*)"],
 };

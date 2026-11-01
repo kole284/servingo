@@ -10,7 +10,8 @@ const DICTIONARIES: Record<Locale, Dictionary> = { sr, en, ru };
 /** Current locale from the [lang] root segment; 404 for unknown locales. */
 export async function getLocale(): Promise<Locale> {
   const locale = await lang();
-  if (!hasLocale(locale)) notFound();
+  // Undefined under /admin, which has its own root layout without [lang].
+  if (!locale || !hasLocale(locale)) notFound();
   return locale;
 }
 

@@ -259,7 +259,8 @@ export const effectiveStatus = (order: { status: string; expiresAt: Date }) =>
 
 const orderWithBills = {
   bills: {
-    orderBy: { createdAt: "asc" },
+    // Bills of one order share a timestamp; restaurants first, Servingo's drinks bill last.
+    orderBy: [{ createdAt: "asc" }, { restaurantId: { sort: "asc", nulls: "last" } }],
     include: {
       items: { orderBy: { sortOrder: "asc" } },
       restaurant: { select: { pickupAddress: true, city: true, orderEmail: true, phone: true } },
