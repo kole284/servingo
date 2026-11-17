@@ -1,8 +1,7 @@
 import { APPLICATION_STATUSES, listInbox } from "@/server/admin-settings";
-import { AdminPage, Badge, Empty } from "../../ui";
+import { AdminPage, Badge, Empty, SERVICE_LABEL } from "../../ui";
 import { setStatusAction } from "./actions";
 
-const KIND = { restoran: "Restoran", poslasticarnica: "Poslastičarnica", vinoteka: "Vinoteka", drugo: "Drugo" } as const;
 const STATUS = { new: "Nova", contacted: "Javili smo se", accepted: "Prihvaćena", rejected: "Odbijena" } as const;
 const dateTime = (date: Date) =>
   new Intl.DateTimeFormat("sr-Latn-RS", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Belgrade" }).format(date);
@@ -21,7 +20,10 @@ export default async function InboxPage() {
               <li key={a.id} className="flex flex-col gap-3 border border-line p-5 md:flex-row md:justify-between">
                 <div className="flex min-w-0 flex-col gap-1 text-[15px]">
                   <p className="text-lg font-medium">
-                    {a.businessName} <span className="text-[14px] font-normal text-muted">· {KIND[a.kind]}, {a.area}</span>
+                    {a.businessName} <span className="text-[14px] font-normal text-muted">· {a.area}</span>
+                  </p>
+                  <p className="text-muted">
+                    {a.services.length > 0 ? a.services.map((s) => SERVICE_LABEL[s]).join(", ") : "Usluge nisu navedene"}
                   </p>
                   <p>
                     {a.contactName} · <a href={`tel:${a.phone}`} className="underline underline-offset-4">{a.phone}</a> ·{" "}

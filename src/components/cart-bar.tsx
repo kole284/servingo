@@ -14,10 +14,8 @@ export function CartBar({ restaurantId }: { restaurantId?: string }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
 
-  // Offer drinks only on a restaurant page, and only if this restaurant's bill has none yet.
-  const offerDrinks =
-    restaurantId !== undefined &&
-    !cart.lines.some((line) => line.restaurantId === restaurantId && isDrink(line.item));
+  // Offer drinks only on a restaurant page, and only while the cart has none yet.
+  const offerDrinks = restaurantId !== undefined && !cart.lines.some((line) => isDrink(line.item));
 
   const next = () => {
     if (offerDrinks) dialog.current?.showModal();
@@ -59,7 +57,7 @@ export function CartBar({ restaurantId }: { restaurantId?: string }) {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row-reverse">
             <Link
-              href={href(`/pica?restoran=${restaurantId}`)}
+              href={href("/pica")}
               className="flex h-12 flex-1 items-center justify-center caps-cta bg-cta text-on-cta hover:bg-cta-strong"
             >
               {t.menu.drinksYes}

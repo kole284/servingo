@@ -67,7 +67,7 @@ export default async function ProcurementPage({ searchParams }: PageProps<"/admi
                     ) : bill.fulfilment === "delivery" ? (
                       `Kupcu: ${[bill.order.address, bill.order.city].filter(Boolean).join(", ")}`
                     ) : (
-                      `Kupac preuzima od Servinga (${bill.order.customerName}, ${bill.order.phone})`
+                      `Po dogovoru sa kupcem (${bill.order.customerName}, ${bill.order.phone})`
                     )}
                   </Cell>
                   <Cell>

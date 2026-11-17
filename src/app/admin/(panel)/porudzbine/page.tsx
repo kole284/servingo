@@ -1,3 +1,4 @@
+import { isConfirmed } from "@/lib/order-status";
 import Link from "next/link";
 import { formatDate, slotLabel } from "@/lib/booking";
 import { dictionaryFor } from "@/i18n/server";
@@ -68,7 +69,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/admin/por
                 </Cell>
                 <Cell className="tabular-nums">{formatPrice(order.totalRsd, "sr", t)}</Cell>
                 <Cell>
-                  <Badge tone={status === "paid" ? "accent" : "muted"}>{ORDER_STATUS[status]}</Badge>
+                  <Badge tone={isConfirmed(status) ? "accent" : "muted"}>{ORDER_STATUS[status]}</Badge>
                 </Cell>
                 <Cell>
                   <ul className="flex flex-col gap-1">

@@ -1,3 +1,4 @@
+import { isConfirmed } from "@/lib/order-status";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dictionaryFor } from "@/i18n/server";
@@ -48,12 +49,13 @@ export default async function OrderPage({ params }: PageProps<"/admin/porudzbine
     >
       <div className="flex flex-col gap-6">
         <p>
-          <Badge tone={status === "paid" ? "accent" : "muted"}>{ORDER_STATUS[status]}</Badge>
+          <Badge tone={isConfirmed(status) ? "accent" : "muted"}>{ORDER_STATUS[status]}</Badge>
         </p>
         <Facts
           rows={[
             ["Termin", `${formatDate(order.deliveryDate.toISOString().slice(0, 10), "sr")}, ${slotLabel(order.slotHour)}`],
-            ["Ukupno", price(order.totalRsd)],
+            ["Ukupno", order.originalTotalRsd ? `${price(order.totalRsd)} (bez koda ${price(order.originalTotalRsd)})` : price(order.totalRsd)],
+            ["Promo kod", order.promoCode && `${order.promoCode}, popust ${order.discountPercent}%`],
             ["Napravljena", dateTime(order.createdAt)],
             ["Plaćena", order.paidAt && dateTime(order.paidAt)],
             ["Kupac", order.customerName],
@@ -67,7 +69,7 @@ export default async function OrderPage({ params }: PageProps<"/admin/porudzbine
       </div>
 
       {order.bills.map((bill) => {
-        const next = status === "paid" ? nextBillStatus(bill) : null;
+        const next = isConfirmed(status) ? nextBillStatus(bill) : null;
         return (
           <section key={bill.id} className="flex flex-col gap-4 border-t border-ink pt-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -108,7 +110,8 @@ export default async function OrderPage({ params }: PageProps<"/admin/porudzbine
               ))}
             </Table>
             <p className="text-right text-[15px] tabular-nums">
-              Jela i pića {price(bill.subtotalRsd)} · dostava {price(bill.deliveryFeeRsd)} · usluga {price(bill.platformFeeRsd)} ·{" "}
+              Jela i pića {price(bill.subtotalRsd)}
+              {bill.discountRsd > 0 && <> · popust −{price(bill.discountRsd)}</>} · dostava {price(bill.deliveryFeeRsd)} · usluga {price(bill.platformFeeRsd)} ·{" "}
               <strong>ukupno {price(bill.totalRsd)}</strong>
             </p>
           </section>

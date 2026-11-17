@@ -1,10 +1,10 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { Method } from "./booking";
+import { belgradeNow, slotTime, type Method } from "./booking";
 import { useConfig } from "./config";
-import type { MenuItem } from "./menu";
-import { priceBills, type Fees, type Seller } from "./pricing";
+import { isDrink, type MenuItem } from "./menu";
+import { SERVINGO_SELLER, priceBills, type Deal, type Fees, type Seller } from "./pricing";
 
 export { SERVINGO_SELLER, type Seller } from "./pricing";
 
@@ -13,7 +13,13 @@ export { SERVINGO_SELLER, type Seller } from "./pricing";
  * The item and restaurant name are copied in when added, so the cart renders without the catalog;
  * the server recalculates every price at checkout.
  */
-export type CartLine = { itemId: string; quantity: number; restaurantId: string; restaurantName: string; item: MenuItem };
+export type CartLine = {
+  itemId: string;
+  quantity: number;
+  restaurantId: string;
+  restaurantName: string;
+  item: MenuItem;
+};
 export type CartBooking = { date?: string; hour?: number; method?: Method };
 /** `placedOrder` is the order sent to payment, so its status page can empty the cart once paid. */
 type CartState = { lines: CartLine[]; booking: CartBooking; placedOrder?: string };
@@ -36,10 +42,25 @@ function load() {
     if (!raw) return;
     const saved = { ...EMPTY, ...JSON.parse(raw) } as CartState;
     // Carts saved before the database have no item copy; those lines are dropped.
-    state = { ...saved, lines: saved.lines.filter((line) => line.item && line.restaurantName) };
+    const lines = saved.lines.filter((line) => line.item && line.restaurantName);
+    // A slot that has already passed is forgotten; the items stay and checkout asks for a new slot.
+    const { date, hour, method } = saved.booking;
+    const passed = date !== undefined && hour !== undefined && slotTime(date, hour) <= belgradeNow();
+    state = { ...saved, booking: passed ? { method } : saved.booking, lines: moveDrinksToServingo(lines) };
   } catch {
     // Storage blocked or corrupt; start empty.
   }
+}
+
+/**
+ * Drinks used to join the bill of the restaurant they were ordered with ("bistro-dorcol:servingo-pica-1").
+ * They are now always on Servingo's bill ("servingo-pica:servingo-pica-1"), so saved carts are moved over.
+ * The same drink may have been added with two restaurants, so two old lines can end up with one key.
+ */
+function moveDrinksToServingo(lines: CartLine[]): CartLine[] {
+  // TODO(human): return the lines with every drink (isDrink(line.item)) on SERVINGO_SELLER's bill,
+  // and decide what happens when two old lines become the same drink line.
+  return lines;
 }
 
 function set(next: CartState) {
@@ -97,6 +118,11 @@ export function clearCart() {
   set(EMPTY);
 }
 
+/** Removes one restaurant's bill: every line of its dishes. */
+export function removeBill(restaurantId: string) {
+  set({ ...state, lines: state.lines.filter((line) => isDrink(line.item) || line.restaurantId !== restaurantId) });
+}
+
 /** Remembers the order sent to payment; the cart stays in case the payment fails. */
 export function markPlaced(code: string) {
   set({ ...state, placedOrder: code });
@@ -114,15 +140,24 @@ export function updateItems(items: MenuItem[]) {
   set({ ...state, lines: state.lines.map((line) => ({ ...line, item: fresh.get(line.itemId) ?? line.item })) });
 }
 
-type DetailsOptions = { method?: Method; cityOk?: boolean };
+type DetailsOptions = { method?: Method; cityOk?: boolean; deal?: Deal };
 
 export function cartDetails(
   cart: CartState,
-  fees: Fees,
+  fees: Fees & { leadTimes?: Record<string, number> },
   // At checkout the chosen method and city decide delivery; elsewhere the homepage choice does.
-  { method = cart.booking.method ?? "dostava", cityOk = true }: DetailsOptions = {},
+  { method = cart.booking.method ?? "dostava", cityOk = true, deal }: DetailsOptions = {},
 ) {
-  return priceBills(cart.lines.map((line) => ({ ...line, key: lineKey(line) })), fees, { method, cityOk });
+  const details = priceBills(cart.lines.map((line) => ({ ...line, key: lineKey(line) })), fees, { method, cityOk, deal });
+  // A restaurant whose lead time no longer fits the slot (e.g. after choosing an earlier one) is flagged here;
+  // the server refuses such an order anyway, but the customer should see it before paying.
+  const { date, hour } = cart.booking;
+  const msAhead = date && hour !== undefined ? slotTime(date, hour) - belgradeNow() : undefined;
+  const bills = details.bills.map((bill) => ({
+    ...bill,
+    tooLate: msAhead !== undefined && msAhead < (fees.leadTimes?.[bill.restaurant.id] ?? 0) * 3_600_000,
+  }));
+  return { ...details, bills, tooLate: bills.filter((bill) => bill.tooLate) };
 }
 
 /** The cart worked out into bills with the current fees. */

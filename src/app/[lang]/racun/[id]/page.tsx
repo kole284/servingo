@@ -1,3 +1,4 @@
+import { isConfirmed } from "@/lib/order-status";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PageShell } from "@/components/page-shell";
@@ -38,7 +39,7 @@ async function Bill({ params, searchParams }: PageProps<"/[lang]/racun/[id]">) {
   const { id } = await params;
   const signature = first((await searchParams).sig);
   const bill = await getBillForRestaurant(id, signature);
-  if (!bill || bill.order.status !== "paid") {
+  if (!bill || !isConfirmed(bill.order.status)) {
     return <PageShell title="Račun nije pronađen" intro="Proveri link iz mejla ili se javi Servingu." />;
   }
 

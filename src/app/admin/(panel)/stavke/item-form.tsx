@@ -4,6 +4,7 @@ import { AdminForm } from "../../admin-form";
 import { SERVICE_LABEL, UNIT_LABEL } from "../../ui";
 import { saveMenuItemAction } from "../catalog-actions";
 import { Check, Hint, Row, Select } from "../fields";
+import { ImageField } from "../image-field";
 
 type Item = {
   id: string;
@@ -18,6 +19,7 @@ type Item = {
   isPopular: boolean;
   isActive: boolean;
   sortOrder: number;
+  imageUrl: string | null;
 };
 
 const units = (tenths: number) => String(tenths / 10).replace(".", ",");
@@ -64,6 +66,7 @@ export function ItemForm({
         <Field label="Korak" name="step" inputMode="decimal" required defaultValue={item ? units(item.stepTenths) : restaurant ? "0,5" : "1"} />
       </Row>
       <Hint>Za kilograme obično 1 i 0,5; za komade npr. 20 i 10.</Hint>
+      <ImageField folder="stavke" label="Fotografija" defaultValue={item?.imageUrl} />
       <Field label="Redosled u meniju" name="sortOrder" type="number" min={0} step={1} defaultValue={item?.sortOrder ?? 0} />
       <Check name="isPopular" label="Najprodavanije (ide na vrh menija)" defaultChecked={item?.isPopular} />
       <Check name="isActive" label="U ponudi" defaultChecked={item?.isActive ?? true} />

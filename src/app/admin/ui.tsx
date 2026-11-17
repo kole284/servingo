@@ -61,6 +61,7 @@ export const Empty = ({ children }: { children: ReactNode }) => (
 export const ORDER_STATUS = {
   pending_payment: "Čeka uplatu",
   paid: "Plaćena",
+  on_invoice: "Na fakturu",
   payment_failed: "Plaćanje nije uspelo",
   cancelled: "Otkazana",
   refunded: "Novac vraćen",

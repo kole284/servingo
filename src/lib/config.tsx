@@ -10,6 +10,8 @@ export type Config = {
   deliveryMinimum: number;
   /** Belgrade and its surrounding municipalities; anywhere else is pickup only. */
   deliveryCities: string[];
+  /** Hours ahead each active restaurant needs an order, so the cart can warn about a slot that is too soon. */
+  leadTimes: Record<string, number>;
 };
 
 const ConfigContext = createContext<Config | null>(null);

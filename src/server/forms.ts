@@ -1,14 +1,15 @@
 import "server-only";
 import { headers } from "next/headers";
 import type { Locale } from "@/i18n/config";
-import type { PartnerKind } from "@/generated/prisma/client";
+import type { Service } from "@/generated/prisma/client";
 import { prisma } from "./db";
 import { sendMail } from "./mail";
 import { sign } from "./signing";
 
 export type FormResult = { ok: true } | { ok: false; error: "invalid"; fields: string[] } | { ok: false; error: "too_many" | "failed" } | null;
 
-export const PARTNER_KINDS = ["restoran", "poslasticarnica", "vinoteka", "drugo"] as const satisfies PartnerKind[];
+/** The site's categories, as the form sends them (hyphens) and as the database stores them. */
+const SERVICES: Record<string, Service> = { ketering: "ketering", "torte-i-kolaci": "torte_i_kolaci", "kuvana-jela": "kuvana_jela", pica: "pica" };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE = /^\+?[\d\s/()-]{6,}$/;
@@ -68,17 +69,17 @@ export async function submitContact(
   return { ok: true };
 }
 
-const KIND_LABEL: Record<PartnerKind, string> = {
-  restoran: "Restoran",
-  poslasticarnica: "Poslastičarnica",
-  vinoteka: "Vinoteka",
-  drugo: "Drugo",
+const SERVICE_LABEL: Record<Service, string> = {
+  ketering: "Ketering",
+  torte_i_kolaci: "Torte i kolači",
+  kuvana_jela: "Kuvana jela",
+  pica: "Pića",
 };
 
 export async function submitPartnerApplication(
   input: {
     businessName?: string;
-    kind?: string;
+    services?: string[];
     contactName?: string;
     email?: string;
     phone?: string;
@@ -91,7 +92,7 @@ export async function submitPartnerApplication(
   if (input.website) return { ok: true };
 
   const businessName = clean(input.businessName, 200);
-  const kind = PARTNER_KINDS.find((k) => k === input.kind);
+  const services = [...new Set((input.services ?? []).flatMap((id) => (SERVICES[id] ? [SERVICES[id]] : [])))];
   const contactName = clean(input.contactName, 120);
   const email = clean(input.email, 200);
   const phone = clean(input.phone, 40);
@@ -99,7 +100,7 @@ export async function submitPartnerApplication(
   const message = clean(input.message, 5000);
   const fields = [
     ...(!businessName ? ["businessName"] : []),
-    ...(!kind ? ["kind"] : []),
+    ...(services.length === 0 ? ["services"] : []),
     ...(!contactName || contactName.length < 2 ? ["contactName"] : []),
     ...(!email || !EMAIL.test(email) ? ["email"] : []),
     ...(!phone || !PHONE.test(phone) ? ["phone"] : []),
@@ -113,12 +114,12 @@ export async function submitPartnerApplication(
   }
 
   await prisma.partnerApplication.create({
-    data: { businessName: businessName!, kind: kind!, contactName: contactName!, email: email!, phone: phone!, area: area!, message, locale, ipHash },
+    data: { businessName: businessName!, services, contactName: contactName!, email: email!, phone: phone!, area: area!, message, locale, ipHash },
   });
   await notifyServingo(
-    `Prijava za saradnju: ${businessName} (${KIND_LABEL[kind!]})`,
+    `Prijava za saradnju: ${businessName}`,
     [
-      `${KIND_LABEL[kind!]}: ${businessName}, ${area}`,
+      `${businessName}, ${area}\nNudi: ${services.map((service) => SERVICE_LABEL[service]).join(", ")}`,
       `Kontakt: ${contactName}, ${phone}, ${email}`,
       ...(message ? [message] : []),
     ].join("\n\n"),

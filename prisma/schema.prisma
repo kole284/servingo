@@ -114,6 +114,10 @@ model Settings {
   contactEmail          String   @default("podrska@servingo.rs") @map("contact_email")
   /// How long an order waits for payment before it counts as cancelled.
   pendingPaymentMinutes Int      @default(30) @map("pending_payment_minutes")
+  /// What a partner's promo code takes off the items, in percent; delivery and the platform fee are then free.
+  promoDiscountPercent  Int      @default(3) @map("promo_discount_percent")
+  /// What a company on monthly invoice pays instead of the flat platform fee, in percent of the items.
+  companyFeePercent     Int      @default(5) @map("company_fee_percent")
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("settings")
@@ -136,11 +140,20 @@ enum BuyerType {
 enum OrderStatus {
   pending_payment
   paid
+  /// A company's order: confirmed at once and charged on the company's monthly invoice.
+  on_invoice
   payment_failed
   cancelled
   refunded
 
   @@map("order_status")
+}
+
+enum PaymentMethod {
+  card
+  invoice
+
+  @@map("payment_method")
 }
 
 enum Fulfilment {
@@ -195,64 +208,85 @@ enum NotificationStatus {
 
 /// One card payment by the customer, covering one bill per restaurant.
 model Order {
-  id             String         @id @default(cuid())
+  id               String           @id @default(cuid())
   /// Shown to the customer, e.g. "SRV-7K3Q9".
-  publicCode     String         @unique @map("public_code")
+  publicCode       String           @unique @map("public_code")
   /// Lets the customer see the order status without an account.
-  accessToken    String         @map("access_token")
+  accessToken      String           @map("access_token")
   /// Language of the customer's emails.
-  locale         String
-  deliveryDate   DateTime       @map("delivery_date") @db.Date
-  slotHour       Int            @map("slot_hour")
-  method         Method
+  locale           String
+  deliveryDate     DateTime         @map("delivery_date") @db.Date
+  slotHour         Int              @map("slot_hour")
+  method           Method
   /// Set only when at least one bill is delivered.
-  city           String?
-  address        String?
-  customerName   String         @map("customer_name")
-  email          String
-  phone          String
-  buyerType      BuyerType      @map("buyer_type")
-  companyName    String?        @map("company_name")
-  pib            String?
-  mb             String?
-  totalRsd       Int            @map("total_rsd")
-  status         OrderStatus    @default(pending_payment)
-  idempotencyKey String         @unique @map("idempotency_key")
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  city             String?
+  address          String?
+  customerName     String           @map("customer_name")
+  email            String
+  phone            String
+  buyerType        BuyerType        @map("buyer_type")
+  companyName      String?          @map("company_name")
+  pib              String?
+  mb               String?
+  totalRsd         Int              @map("total_rsd")
+  status           OrderStatus      @default(pending_payment)
+  idempotencyKey   String           @unique @map("idempotency_key")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   /// After this a pending order counts as cancelled, even before the cleanup job runs.
-  expiresAt      DateTime       @map("expires_at") @db.Timestamptz(6)
-  paidAt         DateTime?      @map("paid_at") @db.Timestamptz(6)
-  bills          Bill[]
-  payments       Payment[]
-  notifications  Notification[]
+  expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
+  paidAt           DateTime?        @map("paid_at") @db.Timestamptz(6)
+  /// The partner code used, if any; the code text and percent are copied so the order reads the same later.
+  promoCodeId      String?          @map("promo_code_id")
+  promoCode        String?          @map("promo_code")
+  discountPercent  Int              @default(0) @map("discount_percent")
+  /// The order at the normal price, shown struck through next to totalRsd when a promo code lowered it.
+  originalTotalRsd Int?             @map("original_total_rsd")
+  bills            Bill[]
+  payments         Payment[]
+  notifications    Notification[]
+  promo            PromoCode?       @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
+  redemption       PromoRedemption?
+  paymentMethod    PaymentMethod    @default(card) @map("payment_method")
+  /// The company whose monthly invoice this order goes on; email above is the employee who ordered.
+  companyId        String?          @map("company_id")
+  companyInvoiceId String?          @map("company_invoice_id")
+  company          Company?         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  companyInvoice   CompanyInvoice?  @relation(fields: [companyInvoiceId], references: [id], onDelete: SetNull)
 
   @@index([status, expiresAt])
+  @@index([companyId, createdAt])
   @@map("orders")
 }
 
 /// One restaurant's bill within an order; restaurantId is null for Servingo's own drinks bill.
 model Bill {
-  id             String         @id @default(cuid())
-  orderId        String         @map("order_id")
-  restaurantId   String?        @map("restaurant_id")
+  id                 String         @id @default(cuid())
+  orderId            String         @map("order_id")
+  restaurantId       String?        @map("restaurant_id")
   /// Copied so the bill reads the same if the restaurant is renamed.
-  sellerName     String         @map("seller_name")
-  fulfilment     Fulfilment
-  pickupReason   PickupReason?  @map("pickup_reason")
-  subtotalRsd    Int            @map("subtotal_rsd")
-  deliveryFeeRsd Int            @map("delivery_fee_rsd")
-  platformFeeRsd Int            @map("platform_fee_rsd")
-  totalRsd       Int            @map("total_rsd")
-  hasDrinks      Boolean        @map("has_drinks")
-  status         BillStatus     @default(new)
+  sellerName         String         @map("seller_name")
+  fulfilment         Fulfilment
+  pickupReason       PickupReason?  @map("pickup_reason")
+  subtotalRsd        Int            @map("subtotal_rsd")
+  deliveryFeeRsd     Int            @map("delivery_fee_rsd")
+  platformFeeRsd     Int            @map("platform_fee_rsd")
+  totalRsd           Int            @map("total_rsd")
+  /// Dinars a promo code took off the items; deliveryFeeRsd and platformFeeRsd are then 0.
+  discountRsd        Int            @default(0) @map("discount_rsd")
+  /// The fees and total at the normal price, for showing them struck through.
+  baseDeliveryFeeRsd Int            @default(0) @map("base_delivery_fee_rsd")
+  basePlatformFeeRsd Int            @default(0) @map("base_platform_fee_rsd")
+  originalTotalRsd   Int?           @map("original_total_rsd")
+  hasDrinks          Boolean        @map("has_drinks")
+  status             BillStatus     @default(new)
   /// Filled once invoicing is decided (open question 2 in the plan).
-  invoiceNumber  String?        @map("invoice_number")
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
-  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  restaurant     Restaurant?    @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  items          BillItem[]
-  notifications  Notification[]
+  invoiceNumber      String?        @map("invoice_number")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order              Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  restaurant         Restaurant?    @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  items              BillItem[]
+  notifications      Notification[]
 
   @@index([orderId])
   @@index([restaurantId, status])
@@ -296,6 +330,123 @@ model Payment {
   @@map("payments")
 }
 
+/// A partner (someone who recommends Servingo) and their code. Customers using it get a discount;
+/// the partner earns commissionTenths of the items after the discount, paid out monthly.
+model PromoCode {
+  id               String            @id @default(cuid())
+  /// Stored in capitals; customers may type it in any case.
+  code             String            @unique
+  ownerName        String            @map("owner_name")
+  ownerEmail       String?           @map("owner_email")
+  ownerPhone       String?           @map("owner_phone")
+  /// The partner's share in tenths of a percent (50 = 5,0 %).
+  commissionTenths Int               @map("commission_tenths")
+  isActive         Boolean           @default(true) @map("is_active")
+  /// The code stops working after this moment; null for no end.
+  expiresAt        DateTime?         @map("expires_at") @db.Timestamptz(6)
+  note             String?
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  orders           Order[]
+  redemptions      PromoRedemption[]
+  payouts          PromoPayout[]
+
+  @@map("promo_codes")
+}
+
+/// One paid order made with a partner's code: what the partner earned on it. Written when the order is paid.
+model PromoRedemption {
+  id               String       @id @default(cuid())
+  promoCodeId      String       @map("promo_code_id")
+  orderId          String       @unique @map("order_id")
+  usedAt           DateTime     @default(now()) @map("used_at") @db.Timestamptz(6)
+  /// The items after the discount, which the commission is worked out from.
+  baseRsd          Int          @map("base_rsd")
+  /// Copied from the code when it was used, so changing the code later never changes past earnings.
+  commissionTenths Int          @map("commission_tenths")
+  commissionRsd    Int          @map("commission_rsd")
+  /// Set once the partner has been paid for the month.
+  payoutId         String?      @map("payout_id")
+  promo            PromoCode    @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
+  order            Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payout           PromoPayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
+  @@index([promoCodeId, usedAt])
+  @@map("promo_redemptions")
+}
+
+/// A month's commission paid to a partner.
+model PromoPayout {
+  id          String            @id @default(cuid())
+  promoCodeId String            @map("promo_code_id")
+  /// "2026-11", by the Belgrade date the orders were paid.
+  month       String
+  amountRsd   Int               @map("amount_rsd")
+  paidAt      DateTime          @default(now()) @map("paid_at") @db.Timestamptz(6)
+  promo       PromoCode         @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
+  redemptions PromoRedemption[]
+
+  @@unique([promoCodeId, month])
+  @@map("promo_payouts")
+}
+
+/// A company that orders on monthly invoice. Its employees order with the company's code and their own email,
+/// which must be on the member list or on the company's email domain.
+model Company {
+  id           String           @id @default(cuid())
+  name         String
+  pib          String           @unique
+  mb           String
+  address      String
+  /// Gets a copy of every order and the monthly invoice.
+  billingEmail String           @map("billing_email")
+  /// Given to employees, e.g. "FIRMA-7K3Q".
+  orderCode    String           @unique @map("order_code")
+  /// Anyone with an email on this domain (e.g. "firma.rs") may order; null for the member list only.
+  emailDomain  String?          @map("email_domain")
+  /// Overrides Settings.companyFeePercent for this company; null for the default.
+  feePercent   Int?             @map("fee_percent")
+  isActive     Boolean          @default(true) @map("is_active")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  members      CompanyMember[]
+  orders       Order[]
+  invoices     CompanyInvoice[]
+
+  @@map("companies")
+}
+
+model CompanyMember {
+  id        String  @id @default(cuid())
+  companyId String  @map("company_id")
+  /// Stored in lower case.
+  email     String
+  name      String?
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, email])
+  @@map("company_members")
+}
+
+/// A month's invoice to a company: the sum of its orders, issued by the admin.
+model CompanyInvoice {
+  id          String    @id @default(cuid())
+  companyId   String    @map("company_id")
+  /// "2026-11", by the Belgrade date the orders were placed.
+  month       String
+  /// e.g. "SRV-F-2026-11-001".
+  number      String    @unique
+  subtotalRsd Int       @map("subtotal_rsd")
+  deliveryRsd Int       @map("delivery_rsd")
+  feeRsd      Int       @map("fee_rsd")
+  totalRsd    Int       @map("total_rsd")
+  issuedAt    DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  paidAt      DateTime? @map("paid_at") @db.Timestamptz(6)
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  orders      Order[]
+
+  @@unique([companyId, month])
+  @@map("company_invoices")
+}
+
 /// Log of every email sent (or attempted) about an order.
 model Notification {
   id        String             @id @default(cuid())
@@ -312,15 +463,6 @@ model Notification {
 
   @@index([orderId])
   @@map("notifications")
-}
-
-enum PartnerKind {
-  restoran
-  poslasticarnica
-  vinoteka
-  drugo
-
-  @@map("partner_kind")
 }
 
 enum ApplicationStatus {
@@ -354,7 +496,8 @@ model ContactMessage {
 model PartnerApplication {
   id           String            @id @default(cuid())
   businessName String            @map("business_name")
-  kind         PartnerKind
+  /// What they would offer, as the site's categories (ketering, torte i kolači, kuvana jela, pića).
+  services     Service[]
   contactName  String            @map("contact_name")
   email        String
   phone        String

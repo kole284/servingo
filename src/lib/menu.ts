@@ -20,6 +20,8 @@ export type MenuItem = {
   min: number;
   /** Shown in the restaurant's "Bestsellers" strip. */
   popular?: boolean;
+  /** Photo in Vercel Blob; a grey placeholder is shown without one. */
+  imageUrl?: string;
 };
 
 /** Drinks are bought and supplied by Servingo itself, so every restaurant offers the same list. */

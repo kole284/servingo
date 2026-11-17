@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fill } from "@/i18n/config";
 import { useI18n } from "@/i18n/provider";
 import { parseBooking, serviceLabel, SERVICES } from "@/lib/booking";
 import { SERVINGO_SELLER, addToCart, lineKey, setBooking, setQuantity, useCart, type Seller } from "@/lib/cart";
-import { formatPrice, formatQuantity, priceLabel, type MenuItem } from "@/lib/menu";
+import { formatPrice, formatQuantity, isDrink, priceLabel, type MenuItem } from "@/lib/menu";
 import { MinusIcon, PlusIcon, TrashIcon } from "./icons";
+import { Photo } from "./photo";
 
 type Group = { key: string; title: string; items: MenuItem[] };
 
@@ -76,8 +78,12 @@ function MenuRow({
 
   return (
     <li className="grid grid-cols-[88px_1fr] gap-x-4 gap-y-4 border-b border-line py-6 md:grid-cols-[120px_1fr_auto] md:gap-x-8">
-      {/* Photo placeholder until restaurants upload real images. */}
-      <div className="aspect-square bg-surface" role="img" aria-label={fill(t.restaurants.photo, { name: item.name })} />
+      <Photo
+        src={item.imageUrl}
+        alt={fill(t.restaurants.photo, { name: item.name })}
+        sizes="(min-width: 768px) 120px, 88px"
+        className="aspect-square"
+      />
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex items-start justify-between gap-4">
           <h3 className="text-lg leading-snug md:text-xl">{item.name}</h3>
@@ -101,9 +107,14 @@ function Bestsellers({ items, onAdd }: { items: MenuItem[]; onAdd: (item: MenuIt
     <ul className="-mx-4 flex snap-x scroll-px-4 gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:scroll-px-0 md:px-0">
       {items.map((item) => (
         <li key={item.id} className="w-40 shrink-0 snap-start md:w-52">
-          <div className="relative aspect-square bg-surface" role="img" aria-label={fill(t.restaurants.photo, { name: item.name })}>
+          <Photo
+            src={item.imageUrl}
+            alt={fill(t.restaurants.photo, { name: item.name })}
+            sizes="(min-width: 768px) 208px, 160px"
+            className="aspect-square"
+          >
             <AddButton item={item} onAdd={onAdd} className="absolute right-2 bottom-2 bg-bg" />
-          </div>
+          </Photo>
           <p className="mt-3 line-clamp-2 text-[15px] leading-snug">{item.name}</p>
           <p className="mt-1 text-[15px] font-medium tabular-nums">{formatPrice(item.price, locale, t)}</p>
         </li>
@@ -165,21 +176,31 @@ export function MenuList({
   restaurant,
 }: {
   items: MenuItem[];
-  /** The restaurant being viewed. On the drinks page it comes from ?restoran=, set by the drinks prompt. */
+  /** The restaurant being viewed; its dishes go on its bill. Unset on the drinks page. */
   restaurant?: Seller;
 }) {
-  const { t } = useI18n();
+  const { t, href } = useI18n();
   const cart = useCart();
   const params = useSearchParams();
-  // Everything listed goes on one bill: the restaurant's, with its drinks, or Servingo's own for drinks alone.
-  const seller = restaurant ?? SERVINGO_SELLER;
-  const keyFor = (item: MenuItem) => lineKey({ itemId: item.id, restaurantId: seller.id });
+  const slotDialog = useRef<HTMLDialogElement>(null);
+  // Dishes go on the restaurant's bill; drinks are Servingo's shop and always go on its own bill.
+  const sellerFor = (item: MenuItem) => (isDrink(item) || !restaurant ? SERVINGO_SELLER : restaurant);
+  const keyFor = (item: MenuItem) => lineKey({ itemId: item.id, restaurantId: sellerFor(item).id });
   const inCart = new Map(cart.lines.map((line) => [lineKey(line), line.quantity]));
 
   const add = (item: MenuItem) => {
-    addToCart(item, item.min, seller);
-    // Remember the slot and method chosen on the homepage so checkout can show them.
     const booking = parseBooking(Object.fromEntries(params));
+    // Restaurants need different lead times, so nothing goes in the cart before a slot is chosen:
+    // from the page address (homepage search) or one already in the cart.
+    const hasSlot =
+      (booking.date !== undefined && booking.hour !== undefined) ||
+      (cart.booking.date !== undefined && cart.booking.hour !== undefined);
+    if (!hasSlot) {
+      slotDialog.current?.showModal();
+      return;
+    }
+    addToCart(item, item.min, sellerFor(item));
+    // Remember the slot and method chosen on the homepage so checkout can show them.
     setBooking({ date: booking.date, hour: booking.hour, method: booking.method });
   };
 
@@ -225,6 +246,29 @@ export function MenuList({
           </section>
         ))}
       </div>
+
+      <dialog ref={slotDialog} aria-labelledby="termin-naslov" className="m-auto w-[calc(100%-32px)] max-w-md p-0 backdrop:bg-ink/40">
+        <div className="flex flex-col gap-6 p-6 md:p-8">
+          <div>
+            <h2 id="termin-naslov" className="text-2xl font-medium tracking-[-0.01em]">
+              {t.menu.slotFirstTitle}
+            </h2>
+            <p className="mt-2 text-[15px] text-muted">{t.menu.slotFirstText}</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row-reverse">
+            <Link href={href("/")} className="flex h-12 flex-1 items-center justify-center caps-cta bg-cta text-on-cta hover:bg-cta-strong">
+              {t.menu.slotFirstCta}
+            </Link>
+            <button
+              type="button"
+              onClick={() => slotDialog.current?.close()}
+              className="flex h-12 flex-1 items-center justify-center caps border border-ink"
+            >
+              {t.menu.slotFirstLater}
+            </button>
+          </div>
+        </div>
+      </dialog>
     </div>
   );
 }

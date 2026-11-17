@@ -1,3 +1,4 @@
+import { CONFIRMED_STATUSES, isConfirmed } from "@/lib/order-status";
 import "server-only";
 import type { Prisma, Unit } from "@/generated/prisma/client";
 import { requireAdmin } from "./admin";
@@ -18,6 +19,7 @@ function statusWhere(status: string | undefined): Prisma.OrderWhereInput {
     case "cancelled":
       return { OR: [{ status: "cancelled" }, { status: { in: ["pending_payment", "payment_failed"] }, expiresAt: { lte: now } }] };
     case "paid":
+    case "on_invoice":
     case "refunded":
       return { status };
     default:
@@ -59,7 +61,7 @@ export async function getOrderForAdmin(code: string) {
 export async function advanceBillAsAdmin(billId: string, from: Prisma.BillGetPayload<object>["status"]) {
   await requireAdmin();
   const bill = await prisma.bill.findUnique({ where: { id: billId }, include: { order: { select: { status: true } } } });
-  if (!bill || bill.order.status !== "paid" || bill.status !== from) return;
+  if (!bill || !isConfirmed(bill.order.status) || bill.status !== from) return;
   const next = nextBillStatus(bill);
   if (next) await prisma.bill.updateMany({ where: { id: billId, status: from }, data: { status: next } });
 }
@@ -72,7 +74,7 @@ export async function drinksForDay(date: string) {
   await requireAdmin();
   if (!isDate(date)) return { totals: [], bills: [] };
   const bills = await prisma.bill.findMany({
-    where: { hasDrinks: true, status: { not: "cancelled" }, order: { status: "paid", deliveryDate: new Date(`${date}T00:00:00Z`) } },
+    where: { hasDrinks: true, status: { not: "cancelled" }, order: { status: { in: [...CONFIRMED_STATUSES] }, deliveryDate: new Date(`${date}T00:00:00Z`) } },
     orderBy: [{ order: { slotHour: "asc" } }, { createdAt: "asc" }],
     include: {
       items: { where: { isDrink: true }, orderBy: { sortOrder: "asc" } },

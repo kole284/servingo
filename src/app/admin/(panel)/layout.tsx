@@ -7,6 +7,8 @@ const NAV = [
   { href: "/admin/nabavka", label: "Pića za nabavku" },
   { href: "/admin/restorani", label: "Restorani" },
   { href: "/admin/pica", label: "Ponuda pića" },
+  { href: "/admin/promo", label: "Promo kodovi" },
+  { href: "/admin/firme", label: "Firme" },
   { href: "/admin/poruke", label: "Poruke i prijave" },
   { href: "/admin/podesavanja", label: "Podešavanja" },
 ];
