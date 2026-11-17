@@ -1,6 +1,8 @@
+import { isConfirmed } from "@/lib/order-status";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Amount } from "@/components/amount";
 import { PageShell } from "@/components/page-shell";
 import { fill, localePath } from "@/i18n/config";
 import { getDictionary } from "@/i18n/server";
@@ -40,6 +42,7 @@ async function OrderStatus({ params, searchParams }: PageProps<"/[lang]/porudzbi
   const status = effectiveStatus(order) as keyof typeof t.order.status;
   const text = {
     paid: fill(t.order.paidText, { email: order.email }),
+    on_invoice: fill(t.order.invoiceText, { email: order.email }),
     pending_payment: t.order.pendingText,
     payment_failed: t.order.failedText,
     cancelled: t.order.cancelledText,
@@ -49,10 +52,10 @@ async function OrderStatus({ params, searchParams }: PageProps<"/[lang]/porudzbi
 
   return (
     <PageShell title={fill(t.order.title, { code: order.publicCode })}>
-      {status === "paid" && <ClearPlacedCart code={order.publicCode} />}
+      {isConfirmed(status) && <ClearPlacedCart code={order.publicCode} />}
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_380px] lg:items-start">
         <div className="flex min-w-0 max-w-2xl flex-col gap-10">
-          <div role="status" className={`border-l-2 px-4 py-3 ${status === "paid" ? "border-cta bg-accent-soft" : "border-ink bg-surface"}`}>
+          <div role="status" className={`border-l-2 px-4 py-3 ${isConfirmed(status) ? "border-cta bg-accent-soft" : "border-ink bg-surface"}`}>
             <p className="text-lg font-medium">{t.order.status[status]}</p>
             <p className="mt-1 text-[15px]">{text}</p>
           </div>
@@ -80,21 +83,33 @@ async function OrderStatus({ params, searchParams }: PageProps<"/[lang]/porudzbi
                 ))}
               </ul>
               <dl className="mt-4 flex flex-col gap-2 text-[15px] md:ml-auto md:max-w-sm">
+                {bill.discountRsd > 0 && order.promoCode && (
+                  <div className="flex justify-between gap-4 font-medium">
+                    <dt>{fill(t.cart.discount, { percent: String(order.discountPercent), code: order.promoCode })}</dt>
+                    <dd className="tabular-nums">−{price(bill.discountRsd)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted">
                     {bill.fulfilment === "delivery" ? t.cart.delivery : bill.restaurantId ? t.cart.pickup : t.cart.arranged}
                   </dt>
-                  <dd className="tabular-nums">{price(bill.deliveryFeeRsd)}</dd>
+                  <dd>
+                    <Amount value={price(bill.deliveryFeeRsd)} original={price(bill.baseDeliveryFeeRsd)} originalLabel={t.cart.withoutCode} />
+                  </dd>
                 </div>
-                {bill.platformFeeRsd > 0 && (
+                {(bill.platformFeeRsd > 0 || bill.basePlatformFeeRsd > 0) && (
                   <div className="flex justify-between gap-4">
                     <dt className="text-muted">{t.cart.platform}</dt>
-                    <dd className="tabular-nums">{price(bill.platformFeeRsd)}</dd>
+                    <dd>
+                      <Amount value={price(bill.platformFeeRsd)} original={price(bill.basePlatformFeeRsd)} originalLabel={t.cart.withoutCode} />
+                    </dd>
                   </div>
                 )}
                 <div className="flex justify-between gap-4 border-t border-ink pt-3 font-medium">
                   <dt>{t.cart.billTotal}</dt>
-                  <dd className="tabular-nums">{price(bill.totalRsd)}</dd>
+                  <dd>
+                    <Amount value={price(bill.totalRsd)} original={bill.originalTotalRsd ? price(bill.originalTotalRsd) : undefined} originalLabel={t.cart.withoutCode} />
+                  </dd>
                 </div>
               </dl>
             </section>
@@ -104,7 +119,9 @@ async function OrderStatus({ params, searchParams }: PageProps<"/[lang]/porudzbi
         <div className="flex flex-col gap-5 bg-surface p-5 md:p-6 lg:sticky lg:top-[calc(var(--header-h)+24px)]">
           <dl className="flex justify-between gap-4 text-lg font-medium">
             <dt>{t.cart.grandTotal}</dt>
-            <dd className="tabular-nums">{price(order.totalRsd)}</dd>
+            <dd>
+              <Amount value={price(order.totalRsd)} original={order.originalTotalRsd ? price(order.originalTotalRsd) : undefined} originalLabel={t.cart.withoutCode} />
+            </dd>
           </dl>
           {canPay ? (
             <form action={retry.bind(null, order.publicCode, order.accessToken)}>

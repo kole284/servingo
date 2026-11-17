@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { belgradeNow, slotTime, type Method } from "./booking";
 import { useConfig } from "./config";
 import { isDrink, type MenuItem } from "./menu";
-import { SERVINGO_SELLER, priceBills, type Fees, type Seller } from "./pricing";
+import { SERVINGO_SELLER, priceBills, type Deal, type Fees, type Seller } from "./pricing";
 
 export { SERVINGO_SELLER, type Seller } from "./pricing";
 
@@ -140,15 +140,15 @@ export function updateItems(items: MenuItem[]) {
   set({ ...state, lines: state.lines.map((line) => ({ ...line, item: fresh.get(line.itemId) ?? line.item })) });
 }
 
-type DetailsOptions = { method?: Method; cityOk?: boolean };
+type DetailsOptions = { method?: Method; cityOk?: boolean; deal?: Deal };
 
 export function cartDetails(
   cart: CartState,
   fees: Fees & { leadTimes?: Record<string, number> },
   // At checkout the chosen method and city decide delivery; elsewhere the homepage choice does.
-  { method = cart.booking.method ?? "dostava", cityOk = true }: DetailsOptions = {},
+  { method = cart.booking.method ?? "dostava", cityOk = true, deal }: DetailsOptions = {},
 ) {
-  const details = priceBills(cart.lines.map((line) => ({ ...line, key: lineKey(line) })), fees, { method, cityOk });
+  const details = priceBills(cart.lines.map((line) => ({ ...line, key: lineKey(line) })), fees, { method, cityOk, deal });
   // A restaurant whose lead time no longer fits the slot (e.g. after choosing an earlier one) is flagged here;
   // the server refuses such an order anyway, but the customer should see it before paying.
   const { date, hour } = cart.booking;

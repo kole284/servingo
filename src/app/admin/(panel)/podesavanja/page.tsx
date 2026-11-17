@@ -20,6 +20,11 @@ export default async function SettingsPage() {
             <Field label="Minimum za dostavu po računu (din)" name="deliveryMinimumRsd" type="number" min={0} required defaultValue={settings.deliveryMinimumRsd} />
             <Field label="Rok za uplatu (minuta)" name="pendingPaymentMinutes" type="number" min={5} max={1440} required defaultValue={settings.pendingPaymentMinutes} />
           </Row>
+          <Row>
+            <Field label="Popust promo koda (%)" name="promoDiscountPercent" type="number" min={0} max={100} required defaultValue={settings.promoDiscountPercent} />
+            <Field label="Usluga platforme za firme (% od jela i pića)" name="companyFeePercent" type="number" min={0} max={100} required defaultValue={settings.companyFeePercent} />
+          </Row>
+          <Hint>Uz promo kod dostava i usluga platforme su besplatne, a jela i pića jeftinija za ovaj procenat. Firme na fakturu umesto usluge po računu plaćaju svoj procenat (može se promeniti po firmi).</Hint>
           <Hint>Nove vrednosti važe za nove porudžbine; postojeći računi zadržavaju svoje iznose.</Hint>
           <Row>
             <Field label="Email za porudžbine pića i povraćaje" name="servingoOrdersEmail" type="email" required defaultValue={settings.servingoOrdersEmail} />

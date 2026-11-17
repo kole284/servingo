@@ -1,3 +1,4 @@
+import { isConfirmed } from "@/lib/order-status";
 import "server-only";
 import type { BillStatus } from "@/generated/prisma/client";
 import { prisma } from "./db";
@@ -26,7 +27,7 @@ export async function getBillForRestaurant(id: string, signature: string | undef
 /** Moves a paid order's bill one step on; `from` keeps a double click from skipping a step. */
 export async function advanceBill(id: string, signature: string, from: BillStatus) {
   const bill = await getBillForRestaurant(id, signature);
-  if (!bill || bill.order.status !== "paid" || bill.status !== from) return;
+  if (!bill || !isConfirmed(bill.order.status) || bill.status !== from) return;
   const next = nextBillStatus(bill);
   if (next) await prisma.bill.updateMany({ where: { id, status: from }, data: { status: next } });
 }

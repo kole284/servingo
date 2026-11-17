@@ -7,9 +7,11 @@ import { removeBill, type CartBill, type CartDetails } from "@/lib/cart";
 import { useConfig } from "@/lib/config";
 import { ChangeSlotButton } from "./change-slot";
 import { formatPrice } from "@/lib/menu";
+import type { Deal } from "@/lib/pricing";
+import { Amount } from "./amount";
 
 /** One restaurant's bill: food, delivery or pickup, platform fee. */
-export function BillSummary({ bill }: { bill: CartBill }) {
+export function BillSummary({ bill, deal }: { bill: CartBill; deal?: Deal }) {
   const { locale, t } = useI18n();
   const { deliveryMinimum } = useConfig();
   const price = (amount: number) => formatPrice(amount, locale, t);
@@ -21,19 +23,31 @@ export function BillSummary({ bill }: { bill: CartBill }) {
           <dt className="text-muted">{t.cart.subtotal}</dt>
           <dd className="tabular-nums">{price(bill.subtotal)}</dd>
         </div>
+        {bill.discount > 0 && deal?.kind === "promo" && (
+          <div className="flex justify-between gap-4 font-medium">
+            <dt>{fill(t.cart.discount, { percent: String(deal.percent), code: deal.code })}</dt>
+            <dd className="tabular-nums">−{price(bill.discount)}</dd>
+          </div>
+        )}
         <div className="flex justify-between gap-4">
           <dt className="text-muted">{bill.delivery ? t.cart.delivery : bill.drinks ? t.cart.arranged : t.cart.pickup}</dt>
-          <dd className="tabular-nums">{price(bill.deliveryFee)}</dd>
+          <dd>
+            <Amount value={price(bill.deliveryFee)} original={price(bill.baseDeliveryFee)} originalLabel={t.cart.withoutCode} />
+          </dd>
         </div>
         {!bill.drinks && (
           <div className="flex justify-between gap-4">
             <dt className="text-muted">{t.cart.platform}</dt>
-            <dd className="tabular-nums">{price(bill.platformFee)}</dd>
+            <dd>
+              <Amount value={price(bill.platformFee)} original={price(bill.basePlatformFee)} originalLabel={t.cart.withoutCode} />
+            </dd>
           </div>
         )}
         <div className="mt-1 flex justify-between gap-4 border-t border-ink pt-3 font-medium">
           <dt>{t.cart.billTotal}</dt>
-          <dd className="tabular-nums">{price(bill.total)}</dd>
+          <dd>
+            <Amount value={price(bill.total)} original={price(bill.originalTotal)} originalLabel={t.cart.withoutCode} />
+          </dd>
         </div>
       </dl>
       {bill.pickupReason && (
@@ -68,12 +82,16 @@ export function PaymentSummary({ cart, children }: { cart: CartDetails; children
               {bill.drinks ? t.cart.drinksBill : bill.restaurant.name}
               <span className="sr-only"> ({bill.delivery ? t.cart.delivery : bill.drinks ? t.cart.arranged : t.cart.pickup})</span>
             </dt>
-            <dd className="tabular-nums">{price(bill.total)}</dd>
+            <dd>
+              <Amount value={price(bill.total)} original={price(bill.originalTotal)} originalLabel={t.cart.withoutCode} />
+            </dd>
           </div>
         ))}
         <div className="mt-2 flex justify-between gap-4 border-t border-ink pt-4 text-lg font-medium">
           <dt>{t.cart.grandTotal}</dt>
-          <dd className="tabular-nums">{price(cart.total)}</dd>
+          <dd>
+            <Amount value={price(cart.total)} original={price(cart.originalTotal)} originalLabel={t.cart.withoutCode} />
+          </dd>
         </div>
       </dl>
       {children}

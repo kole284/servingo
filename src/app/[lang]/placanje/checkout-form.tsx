@@ -15,7 +15,11 @@ import { ChevronDownIcon } from "@/components/icons";
 import type { Dictionary } from "@/i18n/dictionaries/sr";
 import type { Locale } from "@/i18n/config";
 import type { OrderError } from "@/server/orders";
-import { placeOrder } from "./actions";
+import { checkCompany, checkPromo, placeOrder, type CompanyResult, type PlaceOrderResult, type PromoResult } from "./actions";
+import type { Deal } from "@/lib/pricing";
+
+type AppliedPromo = Extract<PromoResult, { ok: true }>;
+type AppliedCompany = Extract<CompanyResult, { ok: true }>;
 
 function errorText(error: OrderError, locale: Locale, t: Dictionary) {
   const messages = t.checkout.errors;
@@ -51,11 +55,28 @@ export function CheckoutForm() {
   const method: Method = raw.booking.method ?? "dostava";
   const [city, setCity] = useState("");
   const outsideArea = city === "drugo";
-  const cart = cartDetails(raw, config, { method, cityOk: !outsideArea });
+  const [result, dispatch, pending] = useActionState(placeOrder, null);
+  // A promo code the server accepted, with the order attempt it was applied after.
+  const [applied, setApplied] = useState<{ promo: AppliedPromo; after: PlaceOrderResult } | null>(null);
+  // An attempt that came back saying the code no longer works drops it, until the customer applies one again.
+  const promoRefused =
+    !!result && !result.ok && result.errors.some((error) => error.code === "promo_invalid" || error.code === "promo_expired");
+  const promo = applied && !(promoRefused && applied.after !== result) ? applied.promo : null;
+  const setPromo = (next: AppliedPromo | null) => setApplied(next ? { promo: next, after: result } : null);
+  // Card, or the company's monthly invoice once its code and the employee's email were accepted.
+  const [paying, setPaying] = useState<"kartica" | "faktura">("kartica");
+  const [company, setCompany] = useState<AppliedCompany | null>(null);
+  const invoice = paying === "faktura" && company !== null;
+  const deal: Deal | undefined = invoice
+    ? { kind: "company", feePercent: company.feePercent }
+    : promo
+      ? { kind: "promo", code: promo.code, percent: promo.percent }
+      : undefined;
+  const formRef = useRef<HTMLFormElement>(null);
+  const cart = cartDetails(raw, config, { method, cityOk: !outsideArea, deal });
   const [buyer, setBuyer] = useState<"fizicko" | "pravno">("fizicko");
   // One key per checkout visit: sending the same cart and details twice reuses the order.
   const clientKey = useRef<string>(null);
-  const [result, dispatch, pending] = useActionState(placeOrder, null);
   // The server's total wins once it has said the amount changed.
   const changed = result && !result.ok ? result.errors.find((error) => error.code === "price_changed") : undefined;
   const total = changed?.total ?? cart.total;
@@ -96,12 +117,15 @@ export function CheckoutForm() {
   }
 
   return (
-    <form onSubmit={submit} className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_380px] lg:items-start">
+    <form ref={formRef} onSubmit={submit} className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_380px] lg:items-start">
       <input type="hidden" name="korpa" value={JSON.stringify(raw.lines.map(({ itemId, restaurantId, quantity }) => ({ itemId, restaurantId, quantity })))} />
       <input type="hidden" name="datum" value={date ?? ""} />
       <input type="hidden" name="vreme" value={hour ?? ""} />
       <input type="hidden" name="iznos" value={total} />
       <input type="hidden" name="jezik" value={locale} />
+      <input type="hidden" name="promo" value={invoice ? "" : (promo?.code ?? "")} />
+      <input type="hidden" name="placanje" value={invoice ? "faktura" : "kartica"} />
+      <input type="hidden" name="firmaKod" value={invoice ? company.code : ""} />
       <div className="flex min-w-0 max-w-2xl flex-col gap-10">
         <Section title={method === "preuzimanje" ? t.checkout.slotPickup : t.checkout.slot}>
           {date && hour !== undefined ? (
@@ -198,32 +222,50 @@ export function CheckoutForm() {
           </div>
         </Section>
 
-        <Section title={t.checkout.buyer}>
-          <RadioCards<"fizicko" | "pravno">
-            name="kupac"
-            label={t.checkout.buyer}
-            value={buyer}
-            onChange={setBuyer}
-            options={[
-              { value: "fizicko", label: t.checkout.person },
-              { value: "pravno", label: t.checkout.company },
-            ]}
-          />
-          {buyer === "pravno" && (
-            <div className="flex flex-col gap-5">
-              <Field label={t.checkout.companyName} name="firma" autoComplete="organization" required />
-              <div className="grid gap-5 md:grid-cols-2">
-                <Field label={t.checkout.pib} name="pib" inputMode="numeric" pattern="\d{9}" title={t.checkout.pibHint} required />
-                <Field label={t.checkout.mb} name="mb" inputMode="numeric" pattern="\d{8}" title={t.checkout.mbHint} required />
+        {!invoice && (
+          <Section title={t.checkout.buyer}>
+            <RadioCards<"fizicko" | "pravno">
+              name="kupac"
+              label={t.checkout.buyer}
+              value={buyer}
+              onChange={setBuyer}
+              options={[
+                { value: "fizicko", label: t.checkout.person },
+                { value: "pravno", label: t.checkout.company },
+              ]}
+            />
+            {buyer === "pravno" && (
+              <div className="flex flex-col gap-5">
+                <Field label={t.checkout.companyName} name="firma" autoComplete="organization" required />
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field label={t.checkout.pib} name="pib" inputMode="numeric" pattern="\d{9}" title={t.checkout.pibHint} required />
+                  <Field label={t.checkout.mb} name="mb" inputMode="numeric" pattern="\d{8}" title={t.checkout.mbHint} required />
+                </div>
               </div>
-            </div>
-          )}
-        </Section>
+            )}
+          </Section>
+        )}
 
         <Section title={t.checkout.payment}>
-          <p className="text-[15px]">
-            {t.checkout.paymentText}
-          </p>
+          <RadioCards<"kartica" | "faktura">
+            name="nacinPlacanja"
+            label={t.checkout.payment}
+            value={paying}
+            onChange={setPaying}
+            options={[
+              { value: "kartica", label: t.checkout.payCard },
+              { value: "faktura", label: t.checkout.payInvoice, note: t.checkout.payInvoiceNote },
+            ]}
+          />
+          {paying === "kartica" ? (
+            <p className="text-[15px]">{t.checkout.paymentText}</p>
+          ) : (
+            <CompanyField
+              applied={company}
+              onChange={setCompany}
+              email={() => String(new FormData(formRef.current ?? undefined).get("email") ?? "")}
+            />
+          )}
         </Section>
       </div>
 
@@ -239,16 +281,21 @@ export function CheckoutForm() {
               </ul>
             </div>
           )}
+          {paying === "kartica" && <PromoField applied={promo} onChange={setPromo} />}
           {/* Paying waits until every restaurant can make the slot. */}
           {cart.tooLate.map((bill) => (
             <SlotWarning key={bill.restaurant.id} bill={bill} />
           ))}
           <button
             type="submit"
-            disabled={pending || result?.ok || cart.tooLate.length > 0}
+            disabled={pending || result?.ok || cart.tooLate.length > 0 || (paying === "faktura" && !invoice)}
             className="h-14 caps-cta bg-cta text-on-cta hover:bg-cta-strong disabled:bg-surface disabled:text-muted"
           >
-            {pending || result?.ok ? t.checkout.paying : fill(t.checkout.pay, { amount: formatPrice(total, locale, t) })}
+            {pending || result?.ok
+              ? invoice
+                ? t.checkout.sending
+                : t.checkout.paying
+              : fill(invoice ? t.checkout.sendInvoiceOrder : t.checkout.pay, { amount: formatPrice(total, locale, t) })}
           </button>
           <Link href={href("/korpa")} className="text-center text-[15px] font-medium underline underline-offset-4">
             {t.checkout.editCart}
@@ -256,5 +303,173 @@ export function CheckoutForm() {
         </PaymentSummary>
       </div>
     </form>
+  );
+}
+
+/** Promo code box above the pay button: checks the code on the server, then the summary shows the lower price. */
+function PromoField({
+  applied,
+  onChange,
+}: {
+  applied: AppliedPromo | null;
+  onChange: (promo: AppliedPromo | null) => void;
+}) {
+  const { t } = useI18n();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  if (applied) {
+    return (
+      <div className="flex flex-col gap-2 border-l-2 border-accent bg-bg px-4 py-3 text-[15px]">
+        <p>{fill(t.checkout.promoApplied, { code: applied.code, percent: String(applied.percent) })}</p>
+        <button type="button" onClick={() => onChange(null)} className="self-start font-medium underline underline-offset-4">
+          {t.checkout.promoRemove}
+        </button>
+      </div>
+    );
+  }
+
+  const apply = async () => {
+    if (!code.trim()) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const result = await checkPromo(code);
+      if (result.ok) onChange(result);
+      else setError(t.checkout.errors[result.reason]);
+    } catch {
+      setError(t.checkout.errors.generic);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label htmlFor="promo-kod" className="text-[15px] font-medium">
+        {t.checkout.promo}
+      </label>
+      <div className="flex gap-2">
+        <input
+          id="promo-kod"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter applies the code instead of submitting the order.
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void apply();
+            }
+          }}
+          placeholder={t.checkout.promoPlaceholder}
+          autoComplete="off"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "promo-greska" : undefined}
+          className="h-12 min-w-0 flex-1 border border-line bg-bg px-4 text-base uppercase placeholder:normal-case focus:border-ink focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => void apply()}
+          disabled={checking || !code.trim()}
+          className="h-12 shrink-0 caps border border-ink px-5 hover:bg-bg disabled:border-line disabled:text-muted"
+        >
+          {t.checkout.promoApply}
+        </button>
+      </div>
+      {error && (
+        <p id="promo-greska" role="alert" className="border-l-2 border-cta pl-3 text-sm">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Company code for an order on the company's invoice; checked with the email typed above. */
+function CompanyField({
+  applied,
+  onChange,
+  email,
+}: {
+  applied: AppliedCompany | null;
+  onChange: (company: AppliedCompany | null) => void;
+  email: () => string;
+}) {
+  const { t } = useI18n();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  if (applied) {
+    return (
+      <div className="flex flex-col gap-2 border-l-2 border-cta bg-accent-soft px-4 py-3 text-[15px]">
+        <p>{fill(t.checkout.companyApplied, { name: applied.name, percent: String(applied.feePercent) })}</p>
+        <button type="button" onClick={() => onChange(null)} className="self-start font-medium underline underline-offset-4">
+          {t.checkout.companyRemove}
+        </button>
+      </div>
+    );
+  }
+
+  const check = async () => {
+    if (!code.trim()) return;
+    const address = email().trim();
+    if (!address) {
+      setError(t.checkout.companyNeedsEmail);
+      return;
+    }
+    setChecking(true);
+    setError(null);
+    try {
+      const result = await checkCompany(code, address);
+      if (result.ok) onChange(result);
+      else setError(t.checkout.errors[result.reason]);
+    } catch {
+      setError(t.checkout.errors.generic);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label htmlFor="firma-kod" className="text-[15px] font-medium">
+        {t.checkout.companyCode}
+      </label>
+      <div className="flex gap-2">
+        <input
+          id="firma-kod"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void check();
+            }
+          }}
+          autoComplete="off"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "firma-greska firma-pomoc" : "firma-pomoc"}
+          className="h-12 min-w-0 flex-1 border border-line bg-bg px-4 text-base uppercase focus:border-ink focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => void check()}
+          disabled={checking || !code.trim()}
+          className="h-12 shrink-0 caps border border-ink px-5 hover:bg-surface disabled:border-line disabled:text-muted"
+        >
+          {t.checkout.companyCheck}
+        </button>
+      </div>
+      <p id="firma-pomoc" className="text-sm text-muted">
+        {t.checkout.companyCodeHint}
+      </p>
+      {error && (
+        <p id="firma-greska" role="alert" className="border-l-2 border-cta pl-3 text-sm">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

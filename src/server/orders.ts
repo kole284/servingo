@@ -7,7 +7,9 @@ import { SERVINGO_DRINKS, isDrink, type MenuItem } from "@/lib/menu";
 import { SERVINGO_SELLER, priceBills } from "@/lib/pricing";
 import { toMenuItem } from "./catalog";
 import { prisma } from "./db";
-import { notifyPaidOrder, notifyRefundNeeded } from "./notifications";
+import { findCompany } from "./company";
+import { notifyPaidOrder, notifyRefundNeeded, orderStatusUrl } from "./notifications";
+import { findPromo, recordRedemption } from "./promo";
 import { paymentProvider, type PaymentResult } from "./payments";
 import { randomToken, safeEqual } from "./signing";
 
@@ -18,6 +20,10 @@ export type CartInput = {
   method: Method;
   /** A delivery city, or anything else (e.g. "drugo") for a place without delivery. */
   city?: string;
+  /** A partner's promo code as typed; checked again here, whatever the browser showed. */
+  promo?: string;
+  /** A company's order code and the employee's email, for an order on the company's monthly invoice. */
+  company?: { code: string; email: string };
 };
 
 export type CustomerInput = {
@@ -40,6 +46,10 @@ export type OrderError =
   | { code: "city_required" }
   | { code: "invalid_details"; fields: string[] }
   | { code: "price_changed"; total: number }
+  | { code: "promo_invalid" }
+  | { code: "promo_expired" }
+  | { code: "company_invalid" }
+  | { code: "company_email" }
   | { code: "payments_unavailable" };
 
 const MAX_LINES = 100;
@@ -53,7 +63,7 @@ export async function quoteOrder(input: CartInput) {
   if (input.lines.length === 0 || input.lines.length > MAX_LINES) return { errors: [{ code: "empty_cart" }] as OrderError[] };
 
   const restaurantIds = [...new Set(input.lines.map((line) => line.restaurantId))].filter((id) => id !== SERVINGO_DRINKS);
-  const [settings, cities, rows, restaurants] = await Promise.all([
+  const [settings, cities, rows, restaurants, promoCheck, companyCheck] = await Promise.all([
     prisma.settings.findUniqueOrThrow({ where: { id: 1 } }),
     prisma.deliveryCity.findMany({ where: { isActive: true }, select: { name: true } }),
     prisma.menuItem.findMany({ where: { id: { in: input.lines.map((line) => line.itemId) }, isActive: true } }),
@@ -61,6 +71,9 @@ export async function quoteOrder(input: CartInput) {
       where: { id: { in: restaurantIds }, isActive: true },
       select: { id: true, name: true, leadTimeHours: true },
     }),
+    // A company has its own price, so a promo code is not used on its orders.
+    input.promo && !input.company ? findPromo(input.promo) : undefined,
+    input.company ? findCompany(input.company.code, input.company.email) : undefined,
   ]);
   const items = new Map(rows.map((row) => [row.id, row]));
   const restaurantById = new Map(restaurants.map((r) => [r.id, r]));
@@ -119,10 +132,19 @@ export async function quoteOrder(input: CartInput) {
     platformFee: settings.platformFeeRsd,
     deliveryMinimum: settings.deliveryMinimumRsd,
   };
-  const quote = priceBills(lines, fees, { method: input.method, cityOk });
+  if (promoCheck && !promoCheck.ok) errors.push({ code: promoCheck.reason });
+  const promo = promoCheck?.ok ? promoCheck : undefined;
+  if (companyCheck && !companyCheck.ok) errors.push({ code: companyCheck.reason });
+  const company = companyCheck?.ok ? companyCheck : undefined;
+  const deal = company
+    ? { kind: "company" as const, feePercent: company.feePercent }
+    : promo
+      ? { kind: "promo" as const, code: promo.promo.code, percent: promo.percent }
+      : undefined;
+  const quote = priceBills(lines, fees, { method: input.method, cityOk, deal });
   // Fresh copies of the cart's items, so the browser can update what it shows.
   const catalog: MenuItem[] = lines.map((line) => line.item);
-  return { errors, quote, settings, catalog };
+  return { errors, quote, settings, catalog, promo: promo?.promo, company: company?.company };
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -171,23 +193,30 @@ export async function createOrder({
   expectedTotal: number;
   locale: Locale;
 }): Promise<{ ok: true; code: string; redirectUrl: string } | { ok: false; errors: OrderError[]; catalog?: MenuItem[] }> {
+  // A company's order goes on its monthly invoice: no card payment, so no payment provider needed.
+  const onInvoice = !!cart.company;
   const provider = paymentProvider();
-  if (!provider) return { ok: false, errors: [{ code: "payments_unavailable" }] };
+  if (!provider && !onInvoice) return { ok: false, errors: [{ code: "payments_unavailable" }] };
 
-  const quoted = await quoteOrder(cart);
+  const quoted = await quoteOrder(cart.company ? { ...cart, company: { ...cart.company, email: rawCustomer.email } } : cart);
   if (!quoted.quote) return { ok: false, errors: quoted.errors };
-  const { errors, quote, settings, catalog } = quoted;
-  const { fields, customer } = checkCustomer(rawCustomer, quote.needsAddress);
+  const { errors, quote, settings, catalog, promo, company } = quoted;
+  // The invoice goes to the company, so its details come from its profile rather than from the form.
+  const buyer: CustomerInput = company
+    ? { ...rawCustomer, buyerType: "pravno", companyName: company.name, pib: company.pib, mb: company.mb }
+    : rawCustomer;
+  const { fields, customer } = checkCustomer(buyer, quote.needsAddress);
   if (fields.length > 0) errors.push({ code: "invalid_details", fields });
   if (errors.length > 0) return { ok: false, errors, catalog };
   if (quote.total !== expectedTotal) return { ok: false, errors: [{ code: "price_changed", total: quote.total }], catalog };
 
   const idempotencyKey = createHash("sha256")
-    .update(JSON.stringify([clientKey, cart, customer, rawCustomer.buyerType, quote.total]))
+    .update(JSON.stringify([clientKey, cart, customer, buyer.buyerType, quote.total]))
     .digest("base64url");
   const existing = await prisma.order.findUnique({ where: { idempotencyKey } });
+  if (existing && existing.status === "on_invoice") return { ok: true, code: existing.publicCode, redirectUrl: orderStatusUrl(existing) };
   if (existing && existing.status === "pending_payment" && existing.expiresAt > new Date()) {
-    return { ok: true, code: existing.publicCode, redirectUrl: provider.startPayment(existing) };
+    return { ok: true, code: existing.publicCode, redirectUrl: provider!.startPayment(existing) };
   }
   if (existing) return { ok: false, errors: [{ code: "price_changed", total: quote.total }], catalog };
 
@@ -202,13 +231,19 @@ export async function createOrder({
     customerName: customer.name,
     email: customer.email,
     phone: customer.phone,
-    buyerType: rawCustomer.buyerType,
+    buyerType: buyer.buyerType,
     companyName: customer.companyName,
     pib: customer.pib,
     mb: customer.mb,
     totalRsd: quote.total,
+    promoCodeId: promo?.id,
+    promoCode: promo?.code,
+    discountPercent: quote.deal?.kind === "promo" ? quote.deal.percent : 0,
+    originalTotalRsd: quote.discount > 0 || quote.originalTotal !== quote.total ? quote.originalTotal : undefined,
     idempotencyKey,
-    expiresAt: new Date(Date.now() + settings.pendingPaymentMinutes * 60_000),
+    ...(company
+      ? { paymentMethod: "invoice" as const, companyId: company.id, status: "on_invoice" as const, expiresAt: new Date() }
+      : { expiresAt: new Date(Date.now() + settings.pendingPaymentMinutes * 60_000) }),
     bills: {
       create: quote.bills.map((bill) => ({
         restaurantId: bill.restaurant.id === SERVINGO_DRINKS ? null : bill.restaurant.id,
@@ -218,6 +253,10 @@ export async function createOrder({
         subtotalRsd: bill.subtotal,
         deliveryFeeRsd: bill.deliveryFee,
         platformFeeRsd: bill.platformFee,
+        baseDeliveryFeeRsd: bill.baseDeliveryFee,
+        basePlatformFeeRsd: bill.basePlatformFee,
+        discountRsd: bill.discount,
+        originalTotalRsd: bill.originalTotal !== bill.total ? bill.originalTotal : undefined,
         totalRsd: bill.total,
         hasDrinks: bill.notifyServingo,
         items: {
@@ -240,13 +279,18 @@ export async function createOrder({
   // A clash on the five-character code is rare; try a new one a few times.
   for (let attempt = 0; ; attempt++) {
     try {
-      const order = await prisma.order.create({ data: { ...data, publicCode: newPublicCode() } });
-      return { ok: true, code: order.publicCode, redirectUrl: provider.startPayment(order) };
+      const order = await prisma.order.create({ data: { ...data, publicCode: newPublicCode() }, include: orderWithBills });
+      if (onInvoice) {
+        // Confirmed at once: restaurants get the order now, the company pays at the end of the month.
+        await notifyPaidOrder(order);
+        return { ok: true, code: order.publicCode, redirectUrl: orderStatusUrl(order) };
+      }
+      return { ok: true, code: order.publicCode, redirectUrl: provider!.startPayment(order) };
     } catch (error) {
       const clash = error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
       if (!clash || attempt >= 4) throw error;
       const raced = await prisma.order.findUnique({ where: { idempotencyKey } });
-      if (raced) return { ok: true, code: raced.publicCode, redirectUrl: provider.startPayment(raced) };
+      if (raced) return { ok: true, code: raced.publicCode, redirectUrl: onInvoice ? orderStatusUrl(raced) : provider!.startPayment(raced) };
     }
   }
 }
@@ -264,6 +308,7 @@ const orderWithBills = {
       restaurant: { select: { pickupAddress: true, city: true, orderEmail: true, phone: true } },
     },
   },
+  company: { select: { name: true, billingEmail: true } },
 } satisfies Prisma.OrderInclude;
 
 export type OrderWithBills = Prisma.OrderGetPayload<{ include: typeof orderWithBills }>;
@@ -335,9 +380,14 @@ export async function recordPayment(provider: string, result: PaymentResult) {
   }
 
   // Only the first successful result moves the order to paid and sends the emails.
-  const { count } = await prisma.order.updateMany({
-    where: { id: order.id, status: { in: ["pending_payment", "payment_failed", "cancelled"] } },
-    data: { status: "paid", paidAt: new Date() },
+  // The partner's earnings are written in the same step, so a paid order with a code is always counted once.
+  const count = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.order.updateMany({
+      where: { id: order.id, status: { in: ["pending_payment", "payment_failed", "cancelled"] } },
+      data: { status: "paid", paidAt: new Date() },
+    });
+    if (count === 1) await recordRedemption(tx, order);
+    return count;
   });
   if (count === 1) await notifyPaidOrder(order);
   return { order, outcome: "paid" as const };

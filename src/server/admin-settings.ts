@@ -27,6 +27,8 @@ export async function saveSettings(form: FormData): Promise<string | null> {
     platformFeeRsd: int(form, "platformFeeRsd", 0, 100_000),
     deliveryMinimumRsd: int(form, "deliveryMinimumRsd", 0, 10_000_000),
     pendingPaymentMinutes: int(form, "pendingPaymentMinutes", 5, 24 * 60),
+    promoDiscountPercent: int(form, "promoDiscountPercent", 0, 100),
+    companyFeePercent: int(form, "companyFeePercent", 0, 100),
     servingoOrdersEmail: text(form, "servingoOrdersEmail").toLowerCase(),
     contactEmail: text(form, "contactEmail").toLowerCase(),
   };
@@ -34,6 +36,8 @@ export async function saveSettings(form: FormData): Promise<string | null> {
     return "Iznosi moraju biti celi brojevi dinara.";
   }
   if (data.pendingPaymentMinutes === null) return "Rok za uplatu mora biti između 5 i 1440 minuta.";
+  if (data.promoDiscountPercent === null) return "Popust promo koda je ceo broj od 0 do 100.";
+  if (data.companyFeePercent === null) return "Usluga platforme za firme je ceo broj od 0 do 100.";
   if (!EMAIL.test(data.servingoOrdersEmail) || !EMAIL.test(data.contactEmail)) return "Proveri email adrese.";
   await prisma.settings.update({
     where: { id: 1 },
@@ -43,6 +47,8 @@ export async function saveSettings(form: FormData): Promise<string | null> {
       platformFeeRsd: data.platformFeeRsd,
       deliveryMinimumRsd: data.deliveryMinimumRsd,
       pendingPaymentMinutes: data.pendingPaymentMinutes,
+      promoDiscountPercent: data.promoDiscountPercent,
+      companyFeePercent: data.companyFeePercent,
     },
   });
   return null;
