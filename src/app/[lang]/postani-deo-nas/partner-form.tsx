@@ -1,17 +1,16 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Field, FormAlert, FormSent, Honeypot, RadioCards, TextArea, submitKeeping } from "@/components/form-fields";
+import { CheckCards, Field, FormAlert, FormSent, Honeypot, TextArea, submitKeeping } from "@/components/form-fields";
 import { useI18n } from "@/i18n/provider";
+import { SERVICES, type ServiceId } from "@/lib/booking";
 import { sendApplication } from "./actions";
-
-type Kind = "restoran" | "poslasticarnica" | "vinoteka" | "drugo";
-const KINDS: Kind[] = ["restoran", "poslasticarnica", "vinoteka", "drugo"];
 
 export function PartnerForm() {
   const { locale, t } = useI18n();
   const [result, dispatch, pending] = useActionState(sendApplication, null);
-  const [kind, setKind] = useState<Kind>("restoran");
+  // The same categories as the site menu: Ketering, Torte i kolači, Kuvana jela, Pića.
+  const [services, setServices] = useState<ServiceId[]>([]);
   const f = t.partner.form;
 
   if (result?.ok) return <FormSent title={f.sentTitle} text={f.sentText} />;
@@ -22,15 +21,15 @@ export function PartnerForm() {
       <Honeypot />
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-[15px] font-medium">
-          {f.kind}
+          {f.services}
           <span className="text-accent" aria-hidden="true"> *</span>
         </legend>
-        <RadioCards<Kind>
-          name="vrsta"
-          label={f.kind}
-          value={kind}
-          onChange={setKind}
-          options={KINDS.map((value) => ({ value, label: f.kinds[value] }))}
+        <CheckCards<ServiceId>
+          name="usluge"
+          label={f.services}
+          value={services}
+          onChange={setServices}
+          options={SERVICES.map((service) => ({ value: service.id, label: t.services[service.id] }))}
         />
       </fieldset>
       <div className="grid gap-5 md:grid-cols-2">

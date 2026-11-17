@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import Form from "next/form";
 import { localePath, type Locale } from "@/i18n/config";
@@ -66,6 +67,13 @@ function CategoryNav({ locale, t, className = "" }: { locale: Locale; t: Diction
   );
 }
 
+/*
+ * The burger menu and language switch read the current path. When a restaurant page is rebuilt
+ * after an admin edit, that path is not known up front, so they stream in behind these placeholders
+ * instead of failing the whole page.
+ */
+const LanguagePlaceholder = () => <span aria-hidden="true" className="h-10 w-14 shrink-0" />;
+
 export async function SiteHeader() {
   const { locale, t } = await getDictionary();
 
@@ -76,7 +84,9 @@ export async function SiteHeader() {
       {/* Mobile: logo + burger */}
       <div className="flex h-16 items-center justify-between border-b border-line px-4 md:hidden">
         <Logo locale={locale} className="text-[22px]" />
-        <MobileMenu />
+        <Suspense fallback={<span aria-hidden="true" className="-mr-2 size-10" />}>
+          <MobileMenu />
+        </Suspense>
       </div>
 
       {/* Tablet: two rows */}
@@ -84,7 +94,9 @@ export async function SiteHeader() {
         <div className="flex h-18 items-center gap-6">
           <Logo locale={locale} className="text-2xl" />
           <SearchField locale={locale} t={t} id="search-tablet" />
-          <LanguageDropdown />
+          <Suspense fallback={<LanguagePlaceholder />}>
+            <LanguageDropdown />
+          </Suspense>
           <CartLink locale={locale} t={t} withLabel={false} />
         </div>
         <CategoryNav locale={locale} t={t} className="pb-5" />
@@ -99,7 +111,9 @@ export async function SiteHeader() {
           <div className="w-full max-w-[280px] min-w-0">
             <SearchField locale={locale} t={t} id="search-desktop" />
           </div>
-          <LanguageDropdown />
+          <Suspense fallback={<LanguagePlaceholder />}>
+            <LanguageDropdown />
+          </Suspense>
           <CartLink locale={locale} t={t} withLabel />
         </div>
       </div>

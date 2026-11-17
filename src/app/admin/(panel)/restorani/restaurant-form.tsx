@@ -4,6 +4,7 @@ import { AdminForm } from "../../admin-form";
 import { SERVICE_LABEL } from "../../ui";
 import { saveRestaurantAction } from "../catalog-actions";
 import { Check, Hint, Row } from "../fields";
+import { ImageField } from "../image-field";
 
 type Restaurant = {
   id: string;
@@ -15,6 +16,7 @@ type Restaurant = {
   phone: string;
   leadTimeHours: number;
   isActive: boolean;
+  imageUrl: string | null;
   services: { service: string }[];
 };
 
@@ -57,6 +59,7 @@ export function RestaurantForm({ restaurant }: { restaurant?: Restaurant }) {
         ))}
         <Hint>Pića ima svaki restoran.</Hint>
       </fieldset>
+      <ImageField folder="restorani" label="Fotografija restorana" defaultValue={restaurant?.imageUrl} />
       <Check name="isActive" label="Prikazan na sajtu" defaultChecked={restaurant?.isActive ?? true} />
     </AdminForm>
   );

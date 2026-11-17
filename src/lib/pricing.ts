@@ -16,7 +16,7 @@ export const SERVINGO_SELLER: Seller = { id: SERVINGO_DRINKS, name: "Servingo" }
 export type PricedLineInput = {
   item: Pick<MenuItem, "price" | "restaurantId">;
   quantity: number;
-  /** The bill this line belongs to; drinks take the restaurant they were ordered with. */
+  /** The restaurant a dish comes from; drinks always go on Servingo's bill whatever this says. */
   restaurantId: string;
   restaurantName: string;
 };
@@ -31,22 +31,30 @@ export function priceBills<L extends PricedLineInput>(
   fees: Fees,
   { method, cityOk }: { method: Method; cityOk: boolean },
 ) {
-  const lines = input.map((line) => ({ ...line, total: lineTotal(line.item.price, line.quantity) }));
+  // Drinks are Servingo's own shop: they always make a separate bill, even when ordered with a restaurant.
+  const lines = input.map((line) => ({
+    ...line,
+    billId: isDrink(line.item) ? SERVINGO_DRINKS : line.restaurantId,
+    total: lineTotal(line.item.price, line.quantity),
+  }));
 
   // One restaurant, one bill: fees and the delivery minimum apply per restaurant.
-  // Bills follow the order restaurants were added in; Servingo's own drinks bill comes last.
+  // Bills follow the order restaurants were added in; Servingo's drinks bill comes last.
   const sellers = new Map<string, Seller>();
   for (const line of lines) {
-    if (line.restaurantId !== SERVINGO_DRINKS) sellers.set(line.restaurantId, { id: line.restaurantId, name: line.restaurantName });
+    if (line.billId !== SERVINGO_DRINKS) sellers.set(line.billId, { id: line.billId, name: line.restaurantName });
   }
   sellers.set(SERVINGO_SELLER.id, SERVINGO_SELLER);
 
   const bills = [...sellers.values()].flatMap((seller) => {
-    const own = lines.filter((line) => line.restaurantId === seller.id);
+    const own = lines.filter((line) => line.billId === seller.id);
+    const drinks = seller.id === SERVINGO_DRINKS;
     if (own.length === 0) return [];
     const subtotal = own.reduce((sum, line) => sum + line.total, 0);
     const delivery = method === "dostava" && cityOk && subtotal >= fees.deliveryMinimum;
     const deliveryFee = delivery ? fees.deliveryFee : 0;
+    // The platform fee is for arranging a restaurant's order; Servingo's own drinks do not pay it.
+    const platformFee = drinks ? 0 : fees.platformFee;
     const pickupReason: PickupReason | null = delivery
       ? null
       : method === "preuzimanje"
@@ -57,17 +65,19 @@ export function priceBills<L extends PricedLineInput>(
     return [
       {
         restaurant: seller,
+        /** Servingo's drinks bill: not delivered goes "by arrangement" rather than picked up at a restaurant. */
+        drinks,
         lines: own,
         subtotal,
         delivery,
         /** Why a bill is pickup: the customer chose it, the city is outside Belgrade, or it is under the minimum. */
         pickupReason,
         deliveryFee,
-        platformFee: fees.platformFee,
-        total: subtotal + deliveryFee + fees.platformFee,
+        platformFee,
+        total: subtotal + deliveryFee + platformFee,
         missingForDelivery: Math.max(0, fees.deliveryMinimum - subtotal),
-        // Servingo buys the drinks, so it must also get the order email for any bill with drinks.
-        notifyServingo: own.some((line) => isDrink(line.item)),
+        // Servingo buys the drinks, so it gets the order email for its bill.
+        notifyServingo: drinks,
       },
     ];
   });

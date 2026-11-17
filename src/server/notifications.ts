@@ -54,12 +54,19 @@ function customerMail(order: OrderWithBills): Mail {
         : bill.restaurant
           ? fill(t.email.pickupAt, { address: fullAddress(bill.restaurant.pickupAddress, bill.restaurant.city) })
           : t.email.pickupServingo;
-    const fee = `${bill.fulfilment === "delivery" ? t.email.deliveryFee : t.email.pickupFee}: ${price(bill.deliveryFeeRsd)}`;
+    const feeLabel = bill.fulfilment === "delivery" ? t.email.deliveryFee : bill.restaurant ? t.email.pickupFee : t.email.arrangedFee;
+    const amounts = [
+      `${t.cart.subtotal}: ${price(bill.subtotalRsd)}`,
+      `${feeLabel}: ${price(bill.deliveryFeeRsd)}`,
+      // Servingo's drinks bill has no platform fee.
+      ...(bill.platformFeeRsd > 0 ? [`${t.cart.platform}: ${price(bill.platformFeeRsd)}`] : []),
+      `${t.cart.billTotal}: ${price(bill.totalRsd)}`,
+    ];
     return [
-      bill.sellerName.toUpperCase(),
+      (bill.restaurant ? bill.sellerName : t.cart.drinksBill).toUpperCase(),
       itemLines(bill, locale),
       where,
-      `${t.cart.subtotal}: ${price(bill.subtotalRsd)}\n${fee}\n${t.cart.platform}: ${price(bill.platformFeeRsd)}\n${t.cart.billTotal}: ${price(bill.totalRsd)}`,
+      amounts.join("\n"),
     ].join("\n");
   });
 
@@ -90,7 +97,9 @@ function buyerText(order: OrderWithBills) {
 const fulfilmentText = (order: OrderWithBills, bill: Bill) =>
   bill.fulfilment === "delivery"
     ? `Dostava na adresu: ${fullAddress(order.address, order.city)}`
-    : "Lično preuzimanje u restoranu";
+    : bill.restaurant
+      ? "Lično preuzimanje u restoranu"
+      : "Isporuka po dogovoru: javi se kupcu i dogovori adresu";
 
 function restaurantMail(order: OrderWithBills, bill: Bill & { restaurant: NonNullable<Bill["restaurant"]> }): Mail {
   return {
@@ -102,7 +111,6 @@ function restaurantMail(order: OrderWithBills, bill: Bill & { restaurant: NonNul
       buyerText(order),
       itemLines(bill, "sr"),
       `Jela i pića: ${priceSr(bill.subtotalRsd)}\nDostava: ${priceSr(bill.deliveryFeeRsd)}\nUkupno za račun: ${priceSr(bill.totalRsd)}`,
-      ...(bill.hasDrinks ? ["Pića iz ovog računa nabavlja Servingo i dostavlja ih restoranu."] : []),
       `Potvrdi porudžbinu i javi kad je spremna: ${siteUrl()}${billUrl(bill.id)}`,
     ].join("\n\n"),
   };
@@ -115,9 +123,10 @@ function servingoDrinksMail(order: OrderWithBills, to: string, bills: Bill[]): M
     text: [
       `Porudžbina ${order.publicCode} je plaćena i ima pića koja nabavlja Servingo.`,
       `Termin: ${slotText(order, "sr")}`,
+      // Orders from before drinks got their own bill may still list drinks on a restaurant's bill.
       ...bills.map((bill) =>
         [
-          bill.restaurant ? `Za restoran ${bill.sellerName}` : "Samo pića, bez restorana",
+          ...(bill.restaurant ? [`Uz račun restorana ${bill.sellerName}`] : []),
           itemLines(bill, "sr", bill.items.filter((item) => item.isDrink)),
           fulfilmentText(order, bill),
         ].join("\n"),

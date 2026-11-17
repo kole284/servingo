@@ -4,6 +4,7 @@ import type { Dictionary } from "@/i18n/dictionaries/sr";
 import { serviceLabel } from "@/lib/booking";
 import type { Restaurant } from "@/lib/restaurants";
 import { StarIcon } from "./icons";
+import { Photo } from "./photo";
 
 export function RestaurantCard({
   restaurant,
@@ -20,11 +21,11 @@ export function RestaurantCard({
 
   return (
     <article className="flex flex-col gap-5 md:flex-row md:items-center md:gap-8">
-      {/* Photo placeholder until restaurants upload real images. */}
-      <div
-        className="aspect-[16/10] w-full shrink-0 bg-surface md:aspect-auto md:h-40 md:w-60"
-        role="img"
-        aria-label={fill(t.restaurants.photo, { name: restaurant.name })}
+      <Photo
+        src={restaurant.imageUrl}
+        alt={fill(t.restaurants.photo, { name: restaurant.name })}
+        sizes="(min-width: 768px) 240px, 100vw"
+        className="aspect-[16/10] w-full shrink-0 md:aspect-auto md:h-40 md:w-60"
       />
 
       <div className="flex flex-1 flex-col gap-2">

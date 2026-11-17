@@ -12,7 +12,7 @@ export async function sendApplication(_: FormResult, form: FormData): Promise<Fo
   return submitPartnerApplication(
     {
       businessName: text(form, "naziv"),
-      kind: text(form, "vrsta"),
+      services: form.getAll("usluge").filter((value): value is string => typeof value === "string"),
       contactName: text(form, "ime"),
       email: text(form, "email"),
       phone: text(form, "telefon"),

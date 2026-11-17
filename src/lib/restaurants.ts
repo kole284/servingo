@@ -14,6 +14,8 @@ export type Restaurant = {
   leadTimeHours: number;
   /** Always includes "pica": every restaurant sells Servingo's drinks. */
   services: ServiceId[];
+  /** Photo in Vercel Blob; a grey placeholder is shown without one. */
+  imageUrl: string | null;
 };
 
 export function availableRestaurants(restaurants: Restaurant[], booking: Booking) {

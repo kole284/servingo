@@ -67,7 +67,7 @@ async function OrderStatus({ params, searchParams }: PageProps<"/[lang]/porudzbi
           {order.bills.map((bill) => (
             <section key={bill.id} aria-labelledby={`racun-${bill.id}`}>
               <h2 id={`racun-${bill.id}`} className="caps-title border-b border-ink pb-3 text-base">
-                {bill.sellerName}
+                {bill.restaurantId ? bill.sellerName : t.cart.drinksBill}
               </h2>
               <ul>
                 {bill.items.map((item) => (
@@ -81,13 +81,17 @@ async function OrderStatus({ params, searchParams }: PageProps<"/[lang]/porudzbi
               </ul>
               <dl className="mt-4 flex flex-col gap-2 text-[15px] md:ml-auto md:max-w-sm">
                 <div className="flex justify-between gap-4">
-                  <dt className="text-muted">{bill.fulfilment === "delivery" ? t.cart.delivery : t.cart.pickup}</dt>
+                  <dt className="text-muted">
+                    {bill.fulfilment === "delivery" ? t.cart.delivery : bill.restaurantId ? t.cart.pickup : t.cart.arranged}
+                  </dt>
                   <dd className="tabular-nums">{price(bill.deliveryFeeRsd)}</dd>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted">{t.cart.platform}</dt>
-                  <dd className="tabular-nums">{price(bill.platformFeeRsd)}</dd>
-                </div>
+                {bill.platformFeeRsd > 0 && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted">{t.cart.platform}</dt>
+                    <dd className="tabular-nums">{price(bill.platformFeeRsd)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between gap-4 border-t border-ink pt-3 font-medium">
                   <dt>{t.cart.billTotal}</dt>
                   <dd className="tabular-nums">{price(bill.totalRsd)}</dd>

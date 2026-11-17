@@ -21,6 +21,7 @@ const restaurantSelect = {
   leadTimeHours: true,
   ratingAvg: true,
   ratingCount: true,
+  imageUrl: true,
   services: { select: { service: true } },
 } as const;
 
@@ -31,6 +32,7 @@ type RestaurantRow = {
   leadTimeHours: number;
   ratingAvg: number | null;
   ratingCount: number;
+  imageUrl: string | null;
   services: { service: Service }[];
 };
 
@@ -53,6 +55,7 @@ type MenuItemRow = {
   minQtyTenths: number;
   stepTenths: number;
   isPopular: boolean;
+  imageUrl: string | null;
 };
 
 export const toMenuItem = (row: MenuItemRow): MenuItem => ({
@@ -67,6 +70,7 @@ export const toMenuItem = (row: MenuItemRow): MenuItem => ({
   min: row.minQtyTenths / 10,
   step: row.stepTenths / 10,
   popular: row.isPopular,
+  imageUrl: row.imageUrl ?? undefined,
 });
 
 async function menuItems(restaurantId: string | null) {
@@ -117,14 +121,16 @@ export async function getConfig(): Promise<Config> {
   "use cache";
   cacheLife("hours");
   cacheTag(CATALOG_TAG);
-  const [settings, cities] = await Promise.all([
+  const [settings, cities, restaurants] = await Promise.all([
     prisma.settings.findUniqueOrThrow({ where: { id: 1 } }),
     prisma.deliveryCity.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+    prisma.restaurant.findMany({ where: { isActive: true }, select: { id: true, leadTimeHours: true } }),
   ]);
   return {
     deliveryFee: settings.deliveryFeeRsd,
     platformFee: settings.platformFeeRsd,
     deliveryMinimum: settings.deliveryMinimumRsd,
     deliveryCities: cities.map((city) => city.name),
+    leadTimes: Object.fromEntries(restaurants.map((r) => [r.id, r.leadTimeHours])),
   };
 }

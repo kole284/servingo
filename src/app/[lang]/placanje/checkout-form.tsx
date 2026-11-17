@@ -2,13 +2,14 @@
 
 import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { PaymentSummary } from "@/components/order-summary";
+import { PaymentSummary, SlotWarning } from "@/components/order-summary";
 import { formatDate, slotLabel, type Method } from "@/lib/booking";
 import { fill } from "@/i18n/config";
 import { useI18n } from "@/i18n/provider";
 import { cartDetails, markPlaced, setBooking, updateItems, useCart } from "@/lib/cart";
 import { useConfig } from "@/lib/config";
 import { formatPrice } from "@/lib/menu";
+import { ChangeSlotButton } from "@/components/change-slot";
 import { Field, RadioCards } from "@/components/form-fields";
 import { ChevronDownIcon } from "@/components/icons";
 import type { Dictionary } from "@/i18n/dictionaries/sr";
@@ -104,15 +105,20 @@ export function CheckoutForm() {
       <div className="flex min-w-0 max-w-2xl flex-col gap-10">
         <Section title={method === "preuzimanje" ? t.checkout.slotPickup : t.checkout.slot}>
           {date && hour !== undefined ? (
-            <p className="text-lg">
-              {formatDate(date, locale)}, {slotLabel(hour)}
-            </p>
+            // Same summary box as the restaurant list, so changing the slot is hard to miss.
+            <div className="flex flex-col gap-4 bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-lg font-medium">
+                {formatDate(date, locale)}, {slotLabel(hour)}
+              </p>
+              <ChangeSlotButton
+                label={t.checkout.changeSlot}
+                className="flex h-11 shrink-0 items-center justify-center caps border border-ink px-6 hover:bg-bg"
+              />
+            </div>
           ) : (
             <p className="text-[15px] text-muted">
               {t.checkout.noSlot}{" "}
-              <Link href={href("/")} className="font-medium text-ink underline underline-offset-4">
-                {t.checkout.pickSlot}
-              </Link>
+              <ChangeSlotButton label={t.checkout.pickSlot} className="font-medium text-ink underline underline-offset-4" />
             </p>
           )}
         </Section>
@@ -170,13 +176,18 @@ export function CheckoutForm() {
           {cart.needsAddress ? (
             <Field label={t.checkout.address} name="adresa" autoComplete="street-address" required />
           ) : (
-            !outsideArea && <p className="text-[15px] text-muted">{t.checkout.pickupOnly}</p>
+            !outsideArea && (
+              <p className="text-[15px] text-muted">
+                {cart.bills.some((bill) => !bill.drinks) ? t.checkout.pickupOnly : t.cart.drinksArranged}
+              </p>
+            )
           )}
-          {cart.needsAddress && cart.bills.some((bill) => !bill.delivery) && (
+          {/* Restaurants not delivering are picked up; the drinks bill is arranged, which its summary explains. */}
+          {cart.needsAddress && cart.bills.some((bill) => !bill.delivery && !bill.drinks) && (
             <p className="text-sm text-muted">
               {t.cart.pickup}:{" "}
               {cart.bills
-                .filter((bill) => !bill.delivery)
+                .filter((bill) => !bill.delivery && !bill.drinks)
                 .map((bill) => bill.restaurant.name)
                 .join(", ")}
             </p>
@@ -228,9 +239,13 @@ export function CheckoutForm() {
               </ul>
             </div>
           )}
+          {/* Paying waits until every restaurant can make the slot. */}
+          {cart.tooLate.map((bill) => (
+            <SlotWarning key={bill.restaurant.id} bill={bill} />
+          ))}
           <button
             type="submit"
-            disabled={pending || result?.ok}
+            disabled={pending || result?.ok || cart.tooLate.length > 0}
             className="h-14 caps-cta bg-cta text-on-cta hover:bg-cta-strong disabled:bg-surface disabled:text-muted"
           >
             {pending || result?.ok ? t.checkout.paying : fill(t.checkout.pay, { amount: formatPrice(total, locale, t) })}

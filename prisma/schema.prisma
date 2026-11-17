@@ -314,15 +314,6 @@ model Notification {
   @@map("notifications")
 }
 
-enum PartnerKind {
-  restoran
-  poslasticarnica
-  vinoteka
-  drugo
-
-  @@map("partner_kind")
-}
-
 enum ApplicationStatus {
   new
   contacted
@@ -354,7 +345,8 @@ model ContactMessage {
 model PartnerApplication {
   id           String            @id @default(cuid())
   businessName String            @map("business_name")
-  kind         PartnerKind
+  /// What they would offer, as the site's categories (ketering, torte i kolači, kuvana jela, pića).
+  services     Service[]
   contactName  String            @map("contact_name")
   email        String
   phone        String

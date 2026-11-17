@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckIcon } from "./icons";
 import { startTransition, type FormEvent, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 
 const label = (text: string, required?: boolean) => (
@@ -63,6 +64,50 @@ export function RadioCards<T extends string>({
               <span className="text-base font-medium">{option.label}</span>
               {option.note && <span className="text-sm text-muted">{option.note}</span>}
             </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Like RadioCards, but any number can be chosen; each chosen card is outlined in orange. */
+export function CheckCards<T extends string>({
+  name,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  value: T[];
+  options: { value: T; label: string }[];
+  onChange: (value: T[]) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label={label}>
+      {options.map((option) => {
+        const checked = value.includes(option.value);
+        return (
+          <label
+            key={option.value}
+            className={`flex min-h-14 cursor-pointer items-center gap-3 border px-5 py-3 has-focus-visible:outline-2 has-focus-visible:outline-ink ${
+              checked ? "border-cta bg-accent-soft" : "border-line hover:border-ink"
+            }`}
+          >
+            <input
+              type="checkbox"
+              name={name}
+              value={option.value}
+              checked={checked}
+              onChange={() => onChange(checked ? value.filter((v) => v !== option.value) : [...value, option.value])}
+              className="sr-only"
+            />
+            <span className={`flex size-5 shrink-0 items-center justify-center border ${checked ? "border-cta bg-cta" : "border-muted"}`}>
+              {checked && <CheckIcon size={14} strokeWidth={2.5} className="text-on-cta" />}
+            </span>
+            <span className="text-base font-medium">{option.label}</span>
           </label>
         );
       })}

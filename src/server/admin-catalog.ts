@@ -1,5 +1,6 @@
 import "server-only";
 import { Prisma, type Service, type Unit } from "@/generated/prisma/client";
+import { isBlobImageUrl } from "@/lib/images";
 import { requireAdmin } from "./admin";
 import { prisma } from "./db";
 
@@ -26,6 +27,13 @@ function tenths(form: FormData, name: string) {
 }
 
 export type SaveResult = { ok: true; id: string } | { ok: false; error: string };
+
+/** The uploaded photo's address, null when removed, or undefined when it is not one of ours. */
+function imageUrl(form: FormData) {
+  const value = text(form, "imageUrl", 500);
+  if (!value) return null;
+  return isBlobImageUrl(value) ? value : undefined;
+}
 
 export async function listRestaurantsForAdmin() {
   await requireAdmin();
@@ -56,6 +64,7 @@ export async function saveRestaurant(existingId: string | null, form: FormData):
     phone: text(form, "phone", 40),
     leadTimeHours: int(form, "leadTimeHours", 0, 24 * 60),
     isActive: checked(form, "isActive"),
+    imageUrl: imageUrl(form),
   };
   const services = SERVICES.filter((service) => checked(form, `service_${service}`));
 
@@ -64,8 +73,9 @@ export async function saveRestaurant(existingId: string | null, form: FormData):
   if (!EMAIL.test(data.orderEmail)) return { ok: false, error: "Email za porudžbine nije ispravan." };
   if (data.leadTimeHours === null) return { ok: false, error: "Rok mora biti ceo broj sati." };
   if (services.length === 0) return { ok: false, error: "Izaberi bar jednu uslugu." };
+  if (data.imageUrl === undefined) return { ok: false, error: "Slika nije ispravna; otpremi je ponovo." };
 
-  const fields = { ...data, leadTimeHours: data.leadTimeHours };
+  const fields = { ...data, leadTimeHours: data.leadTimeHours, imageUrl: data.imageUrl };
   try {
     await prisma.$transaction([
       existingId
@@ -111,6 +121,7 @@ export async function saveMenuItem(existingId: string | null, restaurantId: stri
     isPopular: checked(form, "isPopular"),
     isActive: checked(form, "isActive"),
     sortOrder: int(form, "sortOrder", 0, 10_000) ?? 0,
+    imageUrl: imageUrl(form),
   };
 
   if (!service) return { ok: false, error: "Izaberi uslugu." };
@@ -120,12 +131,21 @@ export async function saveMenuItem(existingId: string | null, restaurantId: stri
   if (data.minQtyTenths === null || data.stepTenths === null) {
     return { ok: false, error: "Najmanja količina i korak moraju biti pozitivni brojevi sa najviše jednom decimalom." };
   }
+  if (data.imageUrl === undefined) return { ok: false, error: "Slika nije ispravna; otpremi je ponovo." };
   if (restaurantId) {
     const offers = await prisma.restaurantService.findFirst({ where: { restaurantId, service } });
     if (!offers) return { ok: false, error: "Restoran nema ovu uslugu. Dodaj je prvo u podacima restorana." };
   }
 
-  const fields = { ...data, service, unit, priceRsd: data.priceRsd, minQtyTenths: data.minQtyTenths, stepTenths: data.stepTenths };
+  const fields = {
+    ...data,
+    service,
+    unit,
+    priceRsd: data.priceRsd,
+    minQtyTenths: data.minQtyTenths,
+    stepTenths: data.stepTenths,
+    imageUrl: data.imageUrl,
+  };
   const item = existingId
     ? await prisma.menuItem.update({ where: { id: existingId }, data: fields })
     : await prisma.menuItem.create({ data: { ...fields, restaurantId } });

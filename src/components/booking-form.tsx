@@ -5,6 +5,7 @@ import Form from "next/form";
 import { INTL_LOCALE, fill, type Locale } from "@/i18n/config";
 import { useI18n } from "@/i18n/provider";
 import { METHODS, SERVICES, TIME_SLOTS, type Method, type ServiceId } from "@/lib/booking";
+import { setBooking } from "@/lib/cart";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "./icons";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -44,7 +45,7 @@ function StepLabel({ step, children, htmlFor }: { step: number; children: string
   );
 }
 
-function Calendar({
+export function Calendar({
   value,
   todayIso,
   onChange,
@@ -164,7 +165,12 @@ export function BookingForm({
   return (
     <div className="w-full px-4 py-6 md:px-6 md:py-10 xl:px-12 xl:py-12">
       {/* COS-style framed split panel: calendar on a quiet grey field, choices on white. */}
-      <Form action={href("/restorani")} className="grid grid-cols-1 border border-line md:grid-cols-2">
+      <Form
+        action={href("/restorani")}
+        // The chosen slot becomes the cart's slot right away, so a changed slot is never left behind in the cart.
+        onSubmit={() => setBooking({ date, hour: hour === "" ? undefined : Number(hour), method })}
+        className="grid grid-cols-1 border border-line md:grid-cols-2"
+      >
         <h1 className="sr-only">{t.booking.heading}</h1>
         {date && <input type="hidden" name="datum" value={date} />}
 

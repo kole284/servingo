@@ -72,10 +72,9 @@ export async function quoteOrder(input: CartInput) {
       return [];
     }
     const item = toMenuItem(row);
-    // Dishes go on their own restaurant's bill; drinks on the restaurant they were ordered with, or Servingo's.
-    const sellerOk = isDrink(item)
-      ? line.restaurantId === SERVINGO_DRINKS || restaurantById.has(line.restaurantId)
-      : item.restaurantId === line.restaurantId && restaurantById.has(line.restaurantId);
+    // Dishes go on their own restaurant's bill; drinks always on Servingo's, whatever the browser sent.
+    const drink = isDrink(item);
+    const sellerOk = drink || (item.restaurantId === line.restaurantId && restaurantById.has(line.restaurantId));
     if (!sellerOk) {
       errors.push({ code: "item_unavailable", name: item.name });
       return [];
@@ -91,9 +90,8 @@ export async function quoteOrder(input: CartInput) {
       errors.push({ code: "bad_quantity", name: item.name });
       return [];
     }
-    const restaurantName =
-      line.restaurantId === SERVINGO_DRINKS ? SERVINGO_SELLER.name : restaurantById.get(line.restaurantId)!.name;
-    return [{ item, row, quantity: tenths / 10, tenths, restaurantId: line.restaurantId, restaurantName }];
+    const seller = drink ? SERVINGO_SELLER : { id: line.restaurantId, name: restaurantById.get(line.restaurantId)!.name };
+    return [{ item, row, quantity: tenths / 10, tenths, restaurantId: seller.id, restaurantName: seller.name }];
   });
 
   // The slot must be one of the hourly slots and far enough ahead for every restaurant in the order.
